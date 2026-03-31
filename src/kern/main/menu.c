@@ -350,7 +350,7 @@ static int cmd_ascii(int nargs, char** args){
 		return 0;
 	}
 
-	kprintf("The ascii code of \"%s\" is %d", args[1], args[1][0]);
+	kprintf("The ascii code of \"%s\" is %d\n", args[1], args[1][0]);
 	return 0;
 }
 #endif
