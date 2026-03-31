@@ -432,6 +432,9 @@ defoption netfs
 #
 
 
+defoption ascii
+defoption binhex
+
 ########################################
 #                                      #
 #              Test code               #

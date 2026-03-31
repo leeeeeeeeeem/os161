@@ -45,6 +45,16 @@
 #include <test.h>
 #include "opt-sfs.h"
 #include "opt-net.h"
+#include "opt-ascii.h"
+#include "opt-binhex.h"
+
+#if OPT_ASCII
+#include "ascii.h"
+#endif
+
+#if OPT_BINHEX
+#include "binhex.h"
+#endif
 
 
 /*
@@ -325,7 +335,7 @@ static int cmd_div(int nargs, char** args){
 	kprintf("Result: %d\n", result);
 	return 0;
 }
-
+#ifdef ASCII_H
 /*
  * Command for finding the ASCII code of a character
  */
@@ -337,12 +347,15 @@ static int cmd_ascii(int nargs, char** args){
 	
 	if (strlen(args[1]) != 1){
 		kprintf("Usage: ascii <character>\n");
+		return 0;
 	}
 
 	kprintf("The ascii code of \"%s\" is %d", args[1], args[1][0]);
 	return 0;
 }
+#endif
 
+#ifdef BINHEX_H
 /*
  * Internal function to be used by the binhex command
  */
@@ -369,9 +382,10 @@ static int cmd_binhex(int nargs, char** args){
 		}
 	char binary_string[33];
 	binary_to_string(n, binary_string);
-	kprintf("%d: 0b%s, 0x%x", n, binary_string, n);
+	kprintf("%d: 0b%s, 0x%x\n", n, binary_string, n);
 	return 0;
 }
+#endif
 
 /*
  * Command for starting the system shell.
@@ -868,8 +882,14 @@ static struct {
 	{ "sub",	cmd_sub },
 	{ "mul",	cmd_mul },
 	{ "div",	cmd_div},
+
+#ifdef ASCII_H
 	{ "ascii",	cmd_ascii},
+#endif
+
+#ifdef BINHEX_H
 	{ "binhex",	cmd_binhex},
+#endif
 
 	/* stats */
 	{ "kh",         cmd_kheapstats },

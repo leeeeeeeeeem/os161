@@ -1,0 +1,4 @@
+# Kernel config file using dumbvm with binhex command.
+include conf/DUMBVM
+options hello
+options binhex
