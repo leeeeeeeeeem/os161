@@ -75,6 +75,8 @@ proc_create(const char *name)
 
 	proc->p_numthreads = 0;
 	spinlock_init(&proc->p_lock);
+	proc->p_exitcode = 0;
+	proc->p_exited = false;
 
 	/* VM fields */
 	proc->p_addrspace = NULL;

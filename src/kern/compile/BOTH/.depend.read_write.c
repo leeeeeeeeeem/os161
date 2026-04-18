@@ -10,6 +10,7 @@ read_write.o: ../../syscall/read_write.c ../../include/types.h \
  ../../include/array.h ../../include/threadlist.h \
  includelinks/machine/thread.h ../../include/setjmp.h \
  includelinks/kern/machine/setjmp.h ../../include/proc.h \
- ../../include/vfs.h ../../include/sfs.h ../../include/fs.h \
- ../../include/vnode.h ../../include/kern/sfs.h ../../include/syscall.h \
- ../../include/test.h
+ ../../include/synch.h ../../include/vfs.h ../../include/sfs.h \
+ ../../include/fs.h ../../include/vnode.h ../../include/kern/sfs.h \
+ ../../include/syscall.h ../../include/test.h ../../include/current.h \
+ includelinks/machine/current.h

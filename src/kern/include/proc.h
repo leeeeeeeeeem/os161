@@ -36,6 +36,7 @@
  * Note: curproc is defined by <current.h>.
  */
 
+#include "synch.h"
 #include <spinlock.h>
 
 struct addrspace;
@@ -70,7 +71,10 @@ struct proc {
 	/* VFS */
 	struct vnode *p_cwd;		/* current working directory */
 
-	/* add more material here as needed */
+	bool p_exited;
+	int p_exitcode;
+	struct semaphore *p_sem;
+	struct proc *p_parent;
 };
 
 /* This is the process structure for the kernel and for kernel-only threads. */

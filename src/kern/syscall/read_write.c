@@ -13,32 +13,64 @@
 #include <sfs.h>
 #include <syscall.h>
 #include <test.h>
+#include <current.h>
+#include <copyinout.h>
 
-size_t sys_write(int fd, userptr_t buf_ptr, size_t size){
-	char* buf = (char*) buf_ptr;
+int sys_write(int fd, userptr_t buf_ptr, size_t size, int32_t *retval){
+	char kernel_buf[size + 1];
+	int result;
 
-	if (fd != STDOUT_FILENO && fd != STDERR_FILENO)
-		kprintf("Error, can only write to stdout or stderr");
-
-	for (int i = 0; i < (int) size; i++){
-		putch(buf[i]);
+	if (fd != STDOUT_FILENO && fd != STDERR_FILENO) {
+		return EBADF;
 	}
 
-	return size;
+	result = copyin(buf_ptr, kernel_buf, size);
+	if (result) {
+		return result;
+	}
+
+	for (size_t i = 0; i < size; i++){
+		putch(kernel_buf[i]);
+	}
+
+	*retval = (int32_t)size;
+	return 0;
 }
 
 
-size_t sys_read(int fd, userptr_t buf_ptr, size_t size){
-	char* buf = (char*) buf_ptr;
+int sys_read(int fd, userptr_t buf_ptr, size_t size, int32_t *retval){
+	char kernel_buf[size];
+	int result;
 
-	if (fd != STDOUT_FILENO && fd != STDERR_FILENO)
-		kprintf("Error, can only read from stdout or stderr");
-
-	for (int i = 0; i < (int) size; i++){
-		buf[i] = getch();
-		if (buf[i] == -1)
-			return i;
+	if (fd != STDIN_FILENO) {
+		return EBADF;
 	}
 
-	return size;
+	for (size_t i = 0; i < size; i++){
+		kernel_buf[i] = getch();
+		if (kernel_buf[i] == -1 || kernel_buf[i] == '\r' || kernel_buf[i] == '\n') {
+			*retval = (int32_t)i;
+			goto done;
+		}
+	}
+
+	*retval = (int32_t)size;
+
+done:
+	result = copyout(kernel_buf, buf_ptr, *retval);
+	if (result) {
+		return result;
+	}
+
+	return 0;
+}
+
+int sys_exit(int exitcode){
+	curproc->p_exitcode = exitcode;
+	curproc->p_exited = true;
+
+	thread_exit();
+
+	panic("sys_exit: thread_exit returned\n");
+	return 0;
 }

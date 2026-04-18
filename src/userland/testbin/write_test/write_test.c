@@ -5,5 +5,5 @@
 
 int main() {
 	char buf[256] = "Swaggy lifestyle\n";
-	write(1, buf, 256);
+	write(STDOUT_FILENO, buf, 256);
 }
