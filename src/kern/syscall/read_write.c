@@ -14,7 +14,7 @@
 #include <syscall.h>
 #include <test.h>
 
-int sys_write(int fd, userptr_t buf_ptr, size_t size){
+size_t sys_write(int fd, userptr_t buf_ptr, size_t size){
 	char* buf = (char*) buf_ptr;
 
 	if (fd != STDOUT_FILENO && fd != STDERR_FILENO)
@@ -24,11 +24,11 @@ int sys_write(int fd, userptr_t buf_ptr, size_t size){
 		putch(buf[i]);
 	}
 
-	return (int) size;
+	return size;
 }
 
 
-int sys_read(int fd, userptr_t buf_ptr, size_t size){
+size_t sys_read(int fd, userptr_t buf_ptr, size_t size){
 	char* buf = (char*) buf_ptr;
 
 	if (fd != STDOUT_FILENO && fd != STDERR_FILENO)
@@ -40,5 +40,5 @@ int sys_read(int fd, userptr_t buf_ptr, size_t size){
 			return i;
 	}
 
-	return (int) size;
+	return size;
 }

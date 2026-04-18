@@ -58,6 +58,7 @@ SRCS+=$(KTOP)/main/main.c
 SRCS+=$(KTOP)/main/menu.c
 SRCS+=$(KTOP)/proc/proc.c
 SRCS+=$(KTOP)/syscall/loadelf.c
+SRCS+=$(KTOP)/syscall/read_write.c
 SRCS+=$(KTOP)/syscall/runprogram.c
 SRCS+=$(KTOP)/syscall/time_syscalls.c
 SRCS+=$(KTOP)/test/arraytest.c

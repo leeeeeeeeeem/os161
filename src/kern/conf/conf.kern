@@ -419,6 +419,8 @@ optfile   sfs    fs/sfs/sfs_vnops.c
 defoption hello
 optfile hello main/hello.c
 
+defoption read_write
+optfile read_write syscall/read_write.c
 
 
 #
