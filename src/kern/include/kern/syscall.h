@@ -109,12 +109,12 @@
 #define SYS_close        49
 #define SYS_read         50
 #define SYS_pread        51
-//#define SYS_readv      52
+#define SYS_readv        52
 //#define SYS_preadv     53
 #define SYS_getdirentry  54
 #define SYS_write        55
 #define SYS_pwrite       56
-//#define SYS_writev     57
+#define SYS_writev     	 57
 //#define SYS_pwritev    58
 #define SYS_lseek        59
 #define SYS_flock        60
