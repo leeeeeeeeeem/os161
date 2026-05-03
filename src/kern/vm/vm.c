@@ -1,8 +1,8 @@
+#include "types.h"
+#include "lib.h"
+#include "spinlock.h"
 #include "vm.h"
 #include "coremap.h"
-#include "lib.h"
-#include "types.h"
-#include "spinlock.h"
 
 bool vm_ready = false;
 static struct spinlock mem_lock = SPINLOCK_INITIALIZER;
@@ -15,18 +15,20 @@ void vm_bootstrap(void) {
 vaddr_t alloc_kpages(unsigned int npages) {
 	spinlock_acquire(&mem_lock);
 	
+	vaddr_t vaddr;
 	if (vm_ready == false) {
 		paddr_t paddr = ram_stealmem(npages);
-		return PADDR_TO_KVADDR(paddr);
+		vaddr =  PADDR_TO_KVADDR(paddr);
 	}
 
 	else {
-		vaddr_t vaddr = coremap_alloc(npages);
+		vaddr = coremap_alloc(npages);
 		KASSERT(vaddr != 0);
-		return vaddr;
 	}
 
 	spinlock_release(&mem_lock);
+
+	return vaddr;
 }
 
 void free_kpages(vaddr_t addr) {
@@ -40,6 +42,8 @@ void free_kpages(vaddr_t addr) {
 }
 
 int vm_fault(int faulttype, vaddr_t faultaddress) {
+	(void) faulttype;
+	(void) faultaddress;
 	panic("VM fault not implemented yet\n");
 	return 0;
 }

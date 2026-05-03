@@ -1,5 +1,5 @@
-#include "lib.h"
 #include "types.h"
+#include "lib.h"
 #include "vm.h"
 #include "coremap.h"
 
@@ -19,7 +19,7 @@ void coremap_init(void){
 
 	paddr_t boundary = ram_getfirstfree();
 
-	for (uint32_t i; i < total_frames; i++){
+	for (uint32_t i = 0; i < total_frames; i++){
 		paddr_t page_addr = i * PAGE_SIZE;
 		if (page_addr < boundary){
 			coremap[i].occupancy_state = FIXED;
@@ -37,7 +37,7 @@ vaddr_t coremap_alloc(unsigned npages){
 	if (npages > 255) // chunk size defined as uint8
 		return 0; 
 
-	uint32_t first_page;
+	uint32_t first_page = 0;
 	uint8_t pages_found = 0;
 	for (uint32_t i = 0; i < total_frames; i++){
 		switch (coremap[i].occupancy_state) {
