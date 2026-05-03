@@ -15,5 +15,7 @@ typedef struct {
 } coremap_entry_t ;
 
 void coremap_init(void);
+vaddr_t coremap_alloc(unsigned npages);
+void coremap_free(vaddr_t addr);
 
 #endif
