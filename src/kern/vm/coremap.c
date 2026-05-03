@@ -4,7 +4,6 @@
 #include "coremap.h"
 
 coremap_entry_t* coremap;
-bool coremap_ready = false;
 uint32_t total_frames;
 
 
