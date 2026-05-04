@@ -3,16 +3,16 @@
 
 #include "vm.h"
 
-typedef enum {
+enum occupancy_state {
 	FREE,
 	IN_USE,
 	FIXED
-} occupancy_state;
+};
 
-typedef struct {
-	occupancy_state occupancy_state;
+struct coremap_entry {
+	enum occupancy_state occupancy_state;
 	uint8_t chunk_size;
-} coremap_entry_t ;
+};
 
 void coremap_init(void);
 vaddr_t coremap_alloc(unsigned npages);

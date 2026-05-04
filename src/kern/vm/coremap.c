@@ -3,7 +3,7 @@
 #include "vm.h"
 #include "coremap.h"
 
-coremap_entry_t* coremap;
+struct coremap_entry* coremap;
 uint32_t total_frames;
 
 
@@ -11,11 +11,11 @@ void coremap_init(void){
 	vaddr_t size = ram_getsize();
 
 	total_frames = size / PAGE_SIZE;
-	unsigned long total_bytes = total_frames * sizeof(coremap_entry_t);
+	unsigned long total_bytes = total_frames * sizeof(struct coremap_entry);
 	unsigned long number_of_pages = DIVROUNDUP(total_bytes, PAGE_SIZE);
 
 	paddr_t coremap_paddr = ram_stealmem(number_of_pages);
-	coremap = (coremap_entry_t*) PADDR_TO_KVADDR(coremap_paddr);
+	coremap = (struct coremap_entry*) PADDR_TO_KVADDR(coremap_paddr);
 
 	paddr_t boundary = ram_getfirstfree();
 

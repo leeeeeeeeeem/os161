@@ -35,6 +35,8 @@
  */
 
 
+#include <stddef.h>
+#include <stdint.h>
 #include <vm.h>
 #include "opt-dumbvm.h"
 
@@ -48,19 +50,40 @@ struct vnode;
  * You write this.
  */
 
-struct addrspace {
-#if OPT_DUMBVM
-        vaddr_t as_vbase1;
-        paddr_t as_pbase1;
-        size_t as_npages1;
-        vaddr_t as_vbase2;
-        paddr_t as_pbase2;
-        size_t as_npages2;
-        paddr_t as_stackpbase;
-#else
-        /* Put stuff here for your VM system */
-#endif
+struct region {
+	vaddr_t vaddr;
+	size_t npages;
+	uint8_t readable;
+	uint8_t writeable;
+	uint8_t writeable_backup; // to use in as_prepare_load and as_complete_load
+	uint8_t executable;
+	struct region* next;
 };
+
+struct addrspace {
+	struct region* regions;
+	vaddr_t stack_base;
+	size_t stack_npages;
+};
+
+// struct addrspace {
+// #if OPT_DUMBVM
+// 	vaddr_t as_vbase1;
+// 	paddr_t as_pbase1;
+// 	size_t as_npages1;
+// 	vaddr_t as_vbase2;
+// 	paddr_t as_pbase2;
+// 	size_t as_npages2;
+// 	paddr_t as_stackpbase;
+// #else
+//
+// 	struct region* regions;
+// 	vaddr_t stack_base;
+// 	size_t stack_npages
+//
+// #endif
+// };
+//
 
 /*
  * Functions in addrspace.c:

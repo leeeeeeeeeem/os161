@@ -34,15 +34,9 @@
 #include <vm.h>
 #include <proc.h>
 
-/*
- * Note! If OPT_DUMBVM is set, as is the case until you start the VM
- * assignment, this file is not compiled or linked or in any way
- * used. The cheesy hack versions in dumbvm.c are used instead.
- */
+#define USER_STACK_SIZE 16;
 
-struct addrspace *
-as_create(void)
-{
+struct addrspace *as_create(void) {
 	struct addrspace *as;
 
 	as = kmalloc(sizeof(struct addrspace));
@@ -126,57 +120,65 @@ as_deactivate(void)
  * moment, these are ignored. When you write the VM system, you may
  * want to implement them.
  */
-int
-as_define_region(struct addrspace *as, vaddr_t vaddr, size_t memsize,
-		 int readable, int writeable, int executable)
-{
-	/*
-	 * Write this.
-	 */
+int as_define_region(struct addrspace *as, vaddr_t vaddr, size_t memsize,
+					 int readable, int writeable, int executable) {
 
-	(void)as;
-	(void)vaddr;
-	(void)memsize;
-	(void)readable;
-	(void)writeable;
-	(void)executable;
-	return ENOSYS;
-}
+	struct region* region = as->regions;
+	while (region != NULL) {
+		region = region->next;
+	}
+	region = kmalloc(sizeof(struct region));
+	if (region == NULL)
+		return ENOSYS;
 
-int
-as_prepare_load(struct addrspace *as)
-{
-	/*
-	 * Write this.
-	 */
+	size_t offset = vaddr % PAGE_SIZE;
+	memsize += offset;
+	vaddr -= offset;
 
-	(void)as;
-	return 0;
-}
+	size_t npages = (memsize + PAGE_SIZE - 1) / PAGE_SIZE;
 
-int
-as_complete_load(struct addrspace *as)
-{
-	/*
-	 * Write this.
-	 */
-
-	(void)as;
-	return 0;
-}
-
-int
-as_define_stack(struct addrspace *as, vaddr_t *stackptr)
-{
-	/*
-	 * Write this.
-	 */
-
-	(void)as;
-
-	/* Initial user-level stack pointer */
-	*stackptr = USERSTACK;
+	region->vaddr = vaddr;
+	region->npages = npages;
+	region->readable = readable;
+	region->writeable = writeable;
+	region->executable = executable;
+	region->next = NULL;
 
 	return 0;
 }
 
+int as_prepare_load(struct addrspace *as) {
+	if (as == NULL)
+		return ENOMEM;
+
+	struct region* region = as->regions;
+	while (region != NULL) {
+		region->writeable_backup = region->writeable;
+		region->writeable = 1;
+	}
+
+	return 0;
+}
+
+int as_complete_load(struct addrspace *as) {
+	if (as == NULL)
+		return ENOMEM;
+
+	struct region* region = as->regions;
+	while (region != NULL) {
+		region->writeable = region->writeable_backup;
+	}
+
+	return 0;
+}
+
+int as_define_stack(struct addrspace *as, vaddr_t *stackptr) {
+	if (as == NULL)
+		return ENOMEM;
+
+	as->stack_base = USERSPACETOP;
+	as->stack_npages = USER_STACK_SIZE;
+	*stackptr = USERSPACETOP;
+
+	return 0;
+}
