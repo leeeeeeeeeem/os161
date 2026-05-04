@@ -34,7 +34,7 @@
 #include <vm.h>
 #include <proc.h>
 
-#define USER_STACK_SIZE 16;
+#define USER_STACK_SIZE 16
 
 struct addrspace *as_create(void) {
 	struct addrspace *as;
@@ -43,6 +43,8 @@ struct addrspace *as_create(void) {
 	if (as == NULL) {
 		return NULL;
 	}
+
+	as->regions = NULL;
 
 	/*
 	 * Initialize as needed.
@@ -123,10 +125,9 @@ as_deactivate(void)
 int as_define_region(struct addrspace *as, vaddr_t vaddr, size_t memsize,
 					 int readable, int writeable, int executable) {
 
-	struct region* region = as->regions;
-	while (region != NULL) {
-		region = region->next;
-	}
+	struct region* regions_list = as->regions;
+	struct region* region;
+	
 	region = kmalloc(sizeof(struct region));
 	if (region == NULL)
 		return ENOSYS;
@@ -142,7 +143,9 @@ int as_define_region(struct addrspace *as, vaddr_t vaddr, size_t memsize,
 	region->readable = readable;
 	region->writeable = writeable;
 	region->executable = executable;
-	region->next = NULL;
+	region->next = regions_list;
+
+	as->regions = region;
 
 	return 0;
 }
@@ -155,6 +158,7 @@ int as_prepare_load(struct addrspace *as) {
 	while (region != NULL) {
 		region->writeable_backup = region->writeable;
 		region->writeable = 1;
+		region = region->next;
 	}
 
 	return 0;
@@ -167,6 +171,7 @@ int as_complete_load(struct addrspace *as) {
 	struct region* region = as->regions;
 	while (region != NULL) {
 		region->writeable = region->writeable_backup;
+		region = region->next;
 	}
 
 	return 0;

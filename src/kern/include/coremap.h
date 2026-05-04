@@ -1,7 +1,8 @@
 #ifndef COREMAP_H
 #define COREMAP_H
 
-#include "vm.h"
+#include "types.h"
+#include "lib.h"
 
 enum occupancy_state {
 	FREE,
