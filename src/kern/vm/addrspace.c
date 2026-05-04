@@ -27,12 +27,15 @@
  * SUCH DAMAGE.
  */
 
+#include "pagetable.h"
+#include "spl.h"
 #include <types.h>
 #include <kern/errno.h>
 #include <lib.h>
 #include <addrspace.h>
 #include <vm.h>
 #include <proc.h>
+#include "../../arch/mips/include/tlb.h"
 
 #define USER_STACK_SIZE 16
 
@@ -46,46 +49,70 @@ struct addrspace *as_create(void) {
 
 	as->regions = NULL;
 
-	/*
-	 * Initialize as needed.
-	 */
-
+	as->pagetable = pagetable_create();
+	if (as->pagetable == NULL)
+		return NULL;
+	
 	return as;
 }
 
-int
-as_copy(struct addrspace *old, struct addrspace **ret)
-{
+int as_copy(struct addrspace *old, struct addrspace **ret) {
 	struct addrspace *newas;
 
 	newas = as_create();
 	if (newas==NULL) {
 		return ENOMEM;
 	}
+	
+	newas->stack_base = old->stack_base;
+	newas->stack_npages = old->stack_npages;
+	newas->pagetable = pagetable_copy(old->pagetable);
+	if (newas->pagetable == NULL && old->pagetable != NULL) {
+		as_destroy(newas);
+		return ENOMEM;
+	}
+	newas->regions = NULL;
 
-	/*
-	 * Write this.
-	 */
+	struct region* region = old->regions;
+	while(region != NULL) {
+		struct region* new_region = kmalloc(sizeof(struct region));
+		if (new_region == NULL){
+			as_destroy(newas);
+			return ENOMEM;
+		}
 
-	(void)old;
+		new_region->readable = region->readable;
+		new_region->writeable = region->writeable;
+		new_region->writeable_backup = region->writeable_backup;
+		new_region->executable = region->executable;
+		new_region->vaddr = region->vaddr;
+		new_region->npages = region->npages;
+
+		new_region->next = newas->regions;
+		newas->regions = new_region;
+
+		region = region->next;
+	}
 
 	*ret = newas;
 	return 0;
 }
 
-void
-as_destroy(struct addrspace *as)
-{
-	/*
-	 * Clean up as needed.
-	 */
+void as_destroy(struct addrspace *as) {
+
+	struct region* region = as->regions;
+	while(region != NULL) {
+		struct region* next = region->next;
+		kfree(region);
+		region = next;
+	}
+
+	pagetable_destroy(as->pagetable);
 
 	kfree(as);
 }
 
-void
-as_activate(void)
-{
+void as_activate(void) {
 	struct addrspace *as;
 
 	as = proc_getas();
@@ -97,14 +124,16 @@ as_activate(void)
 		return;
 	}
 
-	/*
-	 * Write this.
-	 */
+	int spl = splhigh();
+
+	for (int i = 0; i < NUM_TLB; i++) {
+		tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
+	}
+
+	splx(spl);
 }
 
-void
-as_deactivate(void)
-{
+void as_deactivate(void) {
 	/*
 	 * Write this. For many designs it won't need to actually do
 	 * anything. See proc.c for an explanation of why it (might)
@@ -130,7 +159,7 @@ int as_define_region(struct addrspace *as, vaddr_t vaddr, size_t memsize,
 	
 	region = kmalloc(sizeof(struct region));
 	if (region == NULL)
-		return ENOSYS;
+		return ENOMEM;
 
 	size_t offset = vaddr % PAGE_SIZE;
 	memsize += offset;

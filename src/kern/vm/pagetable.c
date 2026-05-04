@@ -1,6 +1,7 @@
 #include <pagetable.h>
 #include <kern/errno.h>
 #include <addrspace.h>
+#include <string.h>
 #include <vm.h>
 
 struct pagedir* pagetable_create(void) {
@@ -51,4 +52,62 @@ paddr_t pagetable_translate(struct pagedir* pt, vaddr_t vaddr) {
 	}
 	
 	return entry;
+}
+
+void pagetable_destroy(struct pagedir *pt) {
+	struct pagetable* entry;
+
+	for (int i = 0; i < PT_SIZE; i++) {
+		entry = pt->tables[i];
+
+		if (entry != NULL){
+			for (int j = 0; j < PT_SIZE; j++) {
+				paddr_t paddr = entry->entries[j];
+				if (paddr != 0)
+					free_kpages(PADDR_TO_KVADDR(paddr));
+			}
+			kfree(entry);
+		}
+	}
+	kfree(pt);
+}
+
+struct pagedir* pagetable_copy(struct pagedir* pt) {
+	struct pagedir* new_pt = pagetable_create();
+	if (new_pt == NULL)
+		return NULL;
+
+	struct pagetable* entry;
+	for (int i = 0; i < PT_SIZE; i++) {
+		entry = pt->tables[i];
+
+		if (entry != NULL){
+			new_pt->tables[i] = pagetable_create_lv2();
+			if (new_pt->tables[i] == NULL){
+				pagetable_destroy(new_pt);
+				return NULL;
+			}
+
+			for (int j = 0; j < PT_SIZE; j++) {
+				paddr_t paddr = entry->entries[j];
+
+				if (paddr != 0){
+					vaddr_t new_vaddr = alloc_kpages(1);
+					if (new_vaddr == 0){
+						pagetable_destroy(new_pt);
+						return NULL;
+					}
+					
+					memcpy(
+						(void*) new_vaddr, 
+						(void*) PADDR_TO_KVADDR(paddr), 
+						PAGE_SIZE
+					);
+
+					new_pt->tables[i]->entries[j] = KVADDR_TO_PADDR(new_vaddr);
+				}
+			}
+		}
+	}
+	return new_pt;
 }

@@ -37,6 +37,7 @@
 #include <types.h>
 #include <lib.h>
 #include <vm.h>
+#include <pagetable.h>
 #include "opt-dumbvm.h"
 
 struct vnode;
@@ -61,6 +62,7 @@ struct addrspace {
 	struct region* regions;
 	vaddr_t stack_base;
 	size_t stack_npages;
+	struct pagedir* pagetable;
 };
 
 // struct addrspace {

@@ -21,5 +21,6 @@ struct pagedir* pagetable_create(void);
 struct pagetable* pagetable_create_lv2(void);
 void pagetable_destroy(struct pagedir* pt);
 paddr_t pagetable_translate(struct pagedir* pt, vaddr_t vaddr);
+struct pagedir* pagetable_copy(struct pagedir* pt);
 
 #endif
