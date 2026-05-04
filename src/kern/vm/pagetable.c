@@ -1,7 +1,6 @@
 #include <pagetable.h>
 #include <kern/errno.h>
 #include <addrspace.h>
-#include <string.h>
 #include <vm.h>
 
 struct pagedir* pagetable_create(void) {

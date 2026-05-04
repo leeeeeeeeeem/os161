@@ -102,7 +102,12 @@ translate:
 		paddr |= TLBLO_DIRTY;
 
 	int spl = splhigh();
-	tlb_random(faultaddress & PAGE_FRAME, paddr);
+	int index = tlb_probe(faultaddress & PAGE_FRAME, 0);
+	if (index >= 0) {
+		tlb_write(faultaddress & PAGE_FRAME, paddr, index);
+	} else {
+		tlb_random(faultaddress & PAGE_FRAME, paddr);
+	}
 	splx(spl);
 
 	return 0;
