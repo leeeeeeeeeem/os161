@@ -34,9 +34,8 @@
  * Address space structure and operations.
  */
 
-
-#include <stddef.h>
-#include <stdint.h>
+#include <types.h>
+#include <lib.h>
 #include <vm.h>
 #include "opt-dumbvm.h"
 
@@ -46,8 +45,6 @@ struct vnode;
 /*
  * Address space - data structure associated with the virtual memory
  * space of a process.
- *
- * You write this.
  */
 
 struct region {
