@@ -35,7 +35,7 @@
 #include <addrspace.h>
 #include <vm.h>
 #include <proc.h>
-#include "../../arch/mips/include/tlb.h"
+#include <mips/tlb.h>
 
 #define USER_STACK_SIZE 16
 
