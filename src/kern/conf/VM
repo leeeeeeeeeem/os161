@@ -33,4 +33,4 @@ options sfs			# Always use the file system
 options hello
 options ascii
 options binhex
-options read_write
+options syscalls

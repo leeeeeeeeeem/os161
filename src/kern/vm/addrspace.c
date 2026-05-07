@@ -50,8 +50,10 @@ struct addrspace *as_create(void) {
 	as->regions = NULL;
 
 	as->pagetable = pagetable_create();
-	if (as->pagetable == NULL)
+	if (as->pagetable == NULL){
+		kfree(as);
 		return NULL;
+	}
 	
 	return as;
 }
@@ -59,8 +61,8 @@ struct addrspace *as_create(void) {
 int as_copy(struct addrspace *old, struct addrspace **ret) {
 	struct addrspace *newas;
 
-	newas = as_create();
-	if (newas==NULL) {
+	newas = kmalloc(sizeof(struct addrspace));
+	if (newas == NULL) {
 		return ENOMEM;
 	}
 	

@@ -1,3 +1,4 @@
+#include "addrspace.h"
 #include <types.h>
 #include <kern/errno.h>
 #include <kern/reboot.h>
@@ -68,7 +69,13 @@ done:
 int sys_exit(int exitcode){
 	curproc->p_exitcode = exitcode;
 	curproc->p_exited = true;
-
+	
+	struct addrspace* as = proc_getas();
+	if (as != NULL){
+		as_destroy(as);
+		proc_setas(NULL);
+	}
+	
 	thread_exit();
 
 	panic("sys_exit: thread_exit returned\n");

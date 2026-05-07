@@ -149,9 +149,6 @@ common_prog(int nargs, char **args)
 	 * once you write the code for handling that.
 	 */
 
-	return 0;
-}
-
 /*
  * Command for running an arbitrary userlevel program.
  */

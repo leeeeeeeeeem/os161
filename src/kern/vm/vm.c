@@ -52,11 +52,15 @@ int vm_fault(int faulttype, vaddr_t faultaddress) {
 	struct addrspace* as = proc_getas();
 	paddr_t paddr;
 
-	if (as == NULL)
+	if (as == NULL){
+		kprintf("FATAL EFAULT: type %d at address 0x%x\n", faulttype, faultaddress);
 		return EFAULT;
+	}
 
-	if (faultaddress == 0 || faulttype > 2)
+	if (faultaddress == 0 || faulttype > 2){
+		kprintf("FATAL EFAULT: type %d at address 0x%x\n", faulttype, faultaddress);
 		return EFAULT;
+	}
 
 	struct region* region = as->regions; 
 	struct region* found_region = NULL;
@@ -73,21 +77,28 @@ int vm_fault(int faulttype, vaddr_t faultaddress) {
 		if (faultaddress >= as->stack_base - (as->stack_npages * PAGE_SIZE) &&
 			faultaddress < as->stack_base)
 				goto translate;
+		kprintf("FATAL EFAULT: type %d at address 0x%x\n", faulttype, faultaddress);
 		return EFAULT;
 	}
 
 	switch (faulttype) {
 		case VM_FAULT_READONLY:
-			if (found_region->writeable == 0)
+			if (found_region->writeable == 0){
+				kprintf("FATAL EFAULT: type %d at address 0x%x\n", faulttype, faultaddress);
 				return EFAULT;
+			}
 			break;
 		case VM_FAULT_READ:
-			if (found_region->readable == 0 && found_region->executable == 0)
+			if (found_region->readable == 0 && found_region->executable == 0){
+				kprintf("FATAL EFAULT: type %d at address 0x%x\n", faulttype, faultaddress);
 				return EFAULT;
+			}
 			break;
 		case VM_FAULT_WRITE:
-			if (found_region->writeable == 0)
+			if (found_region->writeable == 0){
+				kprintf("FATAL EFAULT: type %d at address 0x%x\n", faulttype, faultaddress);
 				return EFAULT;
+			}
 			break;
 	}
 
@@ -96,17 +107,19 @@ translate:
 	if (paddr == 0)
 		return ENOMEM;
 
-	paddr |= TLBLO_VALID;
+	uint32_t entrylo = (paddr & PAGE_FRAME);
+
+	entrylo |= TLBLO_VALID;
 
 	if (found_region == NULL || found_region->writeable == 1)
-		paddr |= TLBLO_DIRTY;
+		entrylo |= TLBLO_DIRTY;
 
 	int spl = splhigh();
 	int index = tlb_probe(faultaddress & PAGE_FRAME, 0);
 	if (index >= 0) {
-		tlb_write(faultaddress & PAGE_FRAME, paddr, index);
+		tlb_write(faultaddress & PAGE_FRAME, entrylo, index);
 	} else {
-		tlb_random(faultaddress & PAGE_FRAME, paddr);
+		tlb_random(faultaddress & PAGE_FRAME, entrylo);
 	}
 	splx(spl);
 

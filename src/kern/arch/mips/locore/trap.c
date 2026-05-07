@@ -267,52 +267,52 @@ mips_trap(struct trapframe *tf)
 	 * it was a page fault we couldn't handle.
 	 */
 
-	if (!iskern) {
+	if (iskern) {
 		/*
-		 * Fatal fault in user mode.
-		 * Kill the current user process.
+		 * Fatal fault in kernel mode.
+		 *
+		 * If pcb_badfaultfunc is set, we do not panic; badfaultfunc is
+		 * set by copyin/copyout and related functions to signify that
+		 * the addresses they're accessing are userlevel-supplied and
+		 * not trustable. What we actually want to do is resume
+		 * execution at the function pointed to by badfaultfunc. That's
+		 * going to be "copyfail" (see copyinout.c), which longjmps
+		 * back to copyin/copyout or wherever and returns EFAULT.
+		 *
+		 * Note that we do not just *call* this function, because that
+		 * won't necessarily do anything. We want the control flow
+		 * that is currently executing in copyin (or whichever), and
+		 * is stopped while we process the exception, to *teleport* to
+		 * copyfail.
+		 *
+		 * This is accomplished by changing tf->tf_epc and returning
+		 * from the exception handler.
 		 */
-		kill_curthread(tf->tf_epc, code, tf->tf_vaddr);
-		goto done;
+
+		if (curthread != NULL &&
+		    curthread->t_machdep.tm_badfaultfunc != NULL) {
+			tf->tf_epc = (vaddr_t) curthread->t_machdep.tm_badfaultfunc;
+			goto done;
+		}
+
+		/*
+		 * Really fatal kernel-mode fault.
+		 */
+
+		kprintf("panic: Fatal exception %u (%s) in kernel mode\n", code,
+			trapcodenames[code]);
+		kprintf("panic: EPC 0x%x, exception vaddr 0x%x\n",
+			tf->tf_epc, tf->tf_vaddr);
+
+		panic("I can't handle this... I think I'll just die now...\n");
 	}
 
 	/*
-	 * Fatal fault in kernel mode.
-	 *
-	 * If pcb_badfaultfunc is set, we do not panic; badfaultfunc is
-	 * set by copyin/copyout and related functions to signify that
-	 * the addresses they're accessing are userlevel-supplied and
-	 * not trustable. What we actually want to do is resume
-	 * execution at the function pointed to by badfaultfunc. That's
-	 * going to be "copyfail" (see copyinout.c), which longjmps
-	 * back to copyin/copyout or wherever and returns EFAULT.
-	 *
-	 * Note that we do not just *call* this function, because that
-	 * won't necessarily do anything. We want the control flow
-	 * that is currently executing in copyin (or whichever), and
-	 * is stopped while we process the exception, to *teleport* to
-	 * copyfail.
-	 *
-	 * This is accomplished by changing tf->tf_epc and returning
-	 * from the exception handler.
+	 * Fatal fault in user mode.
+	 * Kill the current user process.
 	 */
-
-	if (curthread != NULL &&
-	    curthread->t_machdep.tm_badfaultfunc != NULL) {
-		tf->tf_epc = (vaddr_t) curthread->t_machdep.tm_badfaultfunc;
-		goto done;
-	}
-
-	/*
-	 * Really fatal kernel-mode fault.
-	 */
-
-	kprintf("panic: Fatal exception %u (%s) in kernel mode\n", code,
-		trapcodenames[code]);
-	kprintf("panic: EPC 0x%x, exception vaddr 0x%x\n",
-		tf->tf_epc, tf->tf_vaddr);
-
-	panic("I can't handle this... I think I'll just die now...\n");
+	kill_curthread(tf->tf_epc, code, tf->tf_vaddr);
+	goto done;
 
  done:
 	/*
