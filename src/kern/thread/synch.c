@@ -138,38 +138,45 @@ V(struct semaphore *sem)
 //
 // Lock.
 
-struct lock *
-lock_create(const char *name)
-{
-        struct lock *lock;
+struct lock* lock_create(const char *name) {
+	struct lock *lock;
 
-        lock = kmalloc(sizeof(*lock));
-        if (lock == NULL) {
-                return NULL;
-        }
+    lock = kmalloc(sizeof(*lock));
+    if (lock == NULL) {
+            return NULL;
+    }
 
-        lock->lk_name = kstrdup(name);
-        if (lock->lk_name == NULL) {
-                kfree(lock);
-                return NULL;
-        }
+    lock->lk_name = kstrdup(name);
+    if (lock->lk_name == NULL) {
+    	kfree(lock);
+		return NULL;
+	}
 
 	HANGMAN_LOCKABLEINIT(&lock->lk_hangman, lock->lk_name);
 
-        // add stuff here as needed
+	lock->wchan = wchan_create(lock->lk_name);
+	if (lock->wchan == NULL){
+		kfree(lock->lk_name);
+		kfree(lock);
+		return NULL;
+	}
 
-        return lock;
+	spinlock_init(&lock->spinlock);
+
+	lock->owner = NULL;
+
+	return lock;
 }
 
-void
-lock_destroy(struct lock *lock)
-{
-        KASSERT(lock != NULL);
+void lock_destroy(struct lock *lock) {
+	KASSERT(lock != NULL);
+	KASSERT(lock->owner == NULL);
 
-        // add stuff here as needed
+	spinlock_cleanup(&lock->spinlock);
+	wchan_destroy(lock->wchan);
 
-        kfree(lock->lk_name);
-        kfree(lock);
+	kfree(lock->lk_name);
+	kfree(lock);
 }
 
 void
