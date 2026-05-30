@@ -53,7 +53,7 @@ struct region {
 	size_t npages;
 	uint8_t readable;
 	uint8_t writeable;
-	uint8_t writeable_backup; // to use in as_prepare_load and as_complete_load
+	uint8_t writeable_backup; //to use in as_prepare_load and as_complete_load
 	uint8_t executable;
 	struct region* next;
 };
@@ -63,6 +63,8 @@ struct addrspace {
 	vaddr_t stack_base;
 	size_t stack_npages;
 	struct pagedir* pagetable;
+	vaddr_t heap_start;
+	vaddr_t heap_end;
 };
 
 // struct addrspace {

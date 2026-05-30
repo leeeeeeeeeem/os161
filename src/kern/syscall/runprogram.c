@@ -52,7 +52,7 @@
  * Calls vfs_open on progname and thus may destroy it.
  */
 int
-runprogram(char *progname)
+runprogram(int nargs, char **args)
 {
 	struct addrspace *as;
 	struct vnode *v;
@@ -60,7 +60,7 @@ runprogram(char *progname)
 	int result;
 
 	/* Open the file. */
-	result = vfs_open(progname, O_RDONLY, 0, &v);
+	result = vfs_open(args[0], O_RDONLY, 0, &v);
 	if (result) {
 		return result;
 	}
@@ -97,8 +97,41 @@ runprogram(char *progname)
 		return result;
 	}
 
+	vaddr_t *argv_ptrs = kmalloc((nargs + 1) * sizeof(vaddr_t));
+	if (argv_ptrs == NULL) {
+		return ENOMEM;
+	}
+
+	for (int i = nargs - 1; i >= 0; i--) {
+		size_t len = strlen(args[i]) + 1;
+		size_t actual_len;
+		stackptr -= len;
+		result = copyoutstr(args[i], (userptr_t)stackptr, len, &actual_len);
+		if (result) {
+			kfree(argv_ptrs);
+			return result;
+		}
+		argv_ptrs[i] = stackptr;
+	}
+	argv_ptrs[nargs] = 0;
+
+	/* Align stackptr to 4 bytes */
+	stackptr -= (stackptr % 4);
+
+	/* Copy argv array */
+	size_t argv_size = (nargs + 1) * sizeof(vaddr_t);
+	stackptr -= argv_size;
+	result = copyout(argv_ptrs, (userptr_t)stackptr, argv_size);
+	if (result) {
+		kfree(argv_ptrs);
+		return result;
+	}
+
+	vaddr_t argv_ptr = stackptr;
+	kfree(argv_ptrs);
+
 	/* Warp to user mode. */
-	enter_new_process(0 /*argc*/, NULL /*userspace addr of argv*/,
+	enter_new_process(nargs, (userptr_t)argv_ptr,
 			  NULL /*userspace addr of environment*/,
 			  stackptr, entrypoint);
 

@@ -32,7 +32,6 @@ void coremap_init(void){
 	}
 }
 
-
 vaddr_t coremap_alloc(unsigned npages){
 	if (npages > 255) // chunk size defined as uint8
 		return 0; 

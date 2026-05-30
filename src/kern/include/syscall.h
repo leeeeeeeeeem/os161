@@ -62,5 +62,6 @@ int sys___time(userptr_t user_seconds, userptr_t user_nanoseconds);
 int sys_read(int fd, userptr_t buf_ptr, size_t size, int32_t *retval);
 int sys_write(int fd, userptr_t buf_ptr, size_t size, int32_t *retval);
 int sys_exit(int exitcode);
+int sys_sbrk(intptr_t amount, vaddr_t *retval);
 
 #endif /* _SYSCALL_H_ */

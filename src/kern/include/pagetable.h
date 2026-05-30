@@ -9,10 +9,12 @@
 #define GET_DIR_INDEX(addr) ((addr >> 22) & 0x000003FF)
 #define GET_PT_INDEX(addr) ((addr >> 12) & 0x000003FF)
 
+// 2 livello
 struct pagetable {
 	paddr_t entries[PT_SIZE];
 }; 
 
+// 1 livello
 struct pagedir {
 	struct pagetable* tables[PT_SIZE];
 };

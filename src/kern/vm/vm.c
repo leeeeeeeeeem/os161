@@ -38,6 +38,7 @@ vaddr_t alloc_kpages(unsigned int npages) {
 	return vaddr;
 }
 
+
 void free_kpages(vaddr_t addr) {
 	if (vm_ready == false) {
 		panic("Can't free memory before the vm system is initialized.\n");
@@ -77,6 +78,10 @@ int vm_fault(int faulttype, vaddr_t faultaddress) {
 		if (faultaddress >= as->stack_base - (as->stack_npages * PAGE_SIZE) &&
 			faultaddress < as->stack_base)
 				goto translate;
+
+		if (faultaddress >= as->heap_start && faultaddress < as->heap_end)
+			goto translate;
+
 		kprintf("FATAL EFAULT: type %d at address 0x%x\n", faulttype, faultaddress);
 		return EFAULT;
 	}

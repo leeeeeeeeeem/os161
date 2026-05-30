@@ -54,6 +54,8 @@ struct addrspace *as_create(void) {
 		kfree(as);
 		return NULL;
 	}
+
+	as->heap_start = as->heap_end = 0;
 	
 	return as;
 }
@@ -68,6 +70,9 @@ int as_copy(struct addrspace *old, struct addrspace **ret) {
 	
 	newas->stack_base = old->stack_base;
 	newas->stack_npages = old->stack_npages;
+	newas->heap_start = old->heap_start;
+	newas->heap_end = old->heap_end;
+
 	newas->pagetable = pagetable_copy(old->pagetable);
 	if (newas->pagetable == NULL && old->pagetable != NULL) {
 		as_destroy(newas);
@@ -178,6 +183,11 @@ int as_define_region(struct addrspace *as, vaddr_t vaddr, size_t memsize,
 
 	as->regions = region;
 
+	vaddr_t region_end = vaddr + npages * PAGE_SIZE;
+	if (region_end > as->heap_start) {
+		as->heap_start = as->heap_end = region_end;
+	}
+
 	return 0;
 }
 
@@ -204,6 +214,8 @@ int as_complete_load(struct addrspace *as) {
 		region->writeable = region->writeable_backup;
 		region = region->next;
 	}
+
+	as_activate();
 
 	return 0;
 }
