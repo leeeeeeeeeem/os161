@@ -44,6 +44,7 @@
 #include <vfs.h>
 #include <syscall.h>
 #include <test.h>
+#include <copyinout.h>
 
 /*
  * Load program "progname" and start running it in usermode.
@@ -115,10 +116,8 @@ runprogram(int nargs, char **args)
 	}
 	argv_ptrs[nargs] = 0;
 
-	/* Align stackptr to 4 bytes */
-	stackptr -= (stackptr % 4);
+	stackptr -= (stackptr % 8);
 
-	/* Copy argv array */
 	size_t argv_size = (nargs + 1) * sizeof(vaddr_t);
 	stackptr -= argv_size;
 	result = copyout(argv_ptrs, (userptr_t)stackptr, argv_size);
@@ -130,9 +129,11 @@ runprogram(int nargs, char **args)
 	vaddr_t argv_ptr = stackptr;
 	kfree(argv_ptrs);
 
-	/* Warp to user mode. */
+	stackptr -= (stackptr % 8);
+	stackptr -= 16;
+
 	enter_new_process(nargs, (userptr_t)argv_ptr,
-			  NULL /*userspace addr of environment*/,
+			  NULL, 
 			  stackptr, entrypoint);
 
 	/* enter_new_process does not return. */

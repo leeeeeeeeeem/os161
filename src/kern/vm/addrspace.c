@@ -176,9 +176,9 @@ int as_define_region(struct addrspace *as, vaddr_t vaddr, size_t memsize,
 
 	region->vaddr = vaddr;
 	region->npages = npages;
-	region->readable = readable;
-	region->writeable = writeable;
-	region->executable = executable;
+	region->readable = readable ? 1 : 0;
+	region->writeable = writeable ? 1 : 0;
+	region->executable = executable ? 1 : 0;
 	region->next = regions_list;
 
 	as->regions = region;

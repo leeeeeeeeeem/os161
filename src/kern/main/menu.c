@@ -91,10 +91,13 @@ cmd_progthread(void *ptr, unsigned long nargs)
 	if (result) {
 		kprintf("Running program %s failed: %s\n", args[0],
 			strerror(result));
-		return;
 	}
 
-	/* NOTREACHED: runprogram only returns on error. */
+	/* runprogram only returns on error; clean up the copied args */
+	for (int i = 0; i < (int)nargs; i++) {
+		kfree(args[i]);
+	}
+	kfree(args);
 }
 
 /*
@@ -104,10 +107,6 @@ cmd_progthread(void *ptr, unsigned long nargs)
  * returns immediately to the menu. This is usually not what you want,
  * so you should have it call your system-calls-assignment waitpid
  * code after forking.
- *
- * Also note that because the subprogram's thread uses the "args"
- * array and strings, until you do this a race condition exists
- * between that code and the menu input code.
  */
 static
 int
@@ -115,6 +114,7 @@ common_prog(int nargs, char **args)
 {
 	struct proc *proc;
 	int result;
+	char **args_copy;
 
 	/* Create a process for the new program to run in. */
 	proc = proc_create_runprogram(args[0] /* name */);
@@ -122,20 +122,39 @@ common_prog(int nargs, char **args)
 		return ENOMEM;
 	}
 
+	/* Copy arguments to the heap to avoid race condition with menu stack */
+	args_copy = kmalloc((nargs + 1) * sizeof(char *));
+	if (args_copy == NULL) {
+		proc_destroy(proc);
+		return ENOMEM;
+	}
+
+	for (int i = 0; i < nargs; i++) {
+		args_copy[i] = kstrdup(args[i]);
+		if (args_copy[i] == NULL) {
+			for (int j = 0; j < i; j++) {
+				kfree(args_copy[j]);
+			}
+			kfree(args_copy);
+			proc_destroy(proc);
+			return ENOMEM;
+		}
+	}
+	args_copy[nargs] = NULL;
+
 	result = thread_fork(args[0] /* thread name */,
 			proc /* new process */,
 			cmd_progthread /* thread function */,
-			args /* thread arg */, nargs /* thread arg */);
+			args_copy /* thread arg */, nargs /* thread arg */);
 	if (result) {
 		kprintf("thread_fork failed: %s\n", strerror(result));
+		for (int i = 0; i < nargs; i++) {
+			kfree(args_copy[i]);
+		}
+		kfree(args_copy);
 		proc_destroy(proc);
 		return result;
 	}
-
-	/*
-	 * The new process will be destroyed when the program exits...
-	 * once you write the code for handling that.
-	 */
 
 	return 0;
 }

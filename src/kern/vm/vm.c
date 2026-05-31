@@ -29,8 +29,10 @@ vaddr_t alloc_kpages(unsigned int npages) {
 
 	else {
 		vaddr = coremap_alloc(npages);
-		if (vaddr == 0)
+		if (vaddr == 0) {
+			spinlock_release(&mem_lock);
 			return 0;
+		}
 	}
 
 	spinlock_release(&mem_lock);
@@ -74,13 +76,18 @@ int vm_fault(int faulttype, vaddr_t faultaddress) {
 		region = region->next;
 	}
 
+	bool is_stack_or_heap = false;
 	if (found_region == NULL){
 		if (faultaddress >= as->stack_base - (as->stack_npages * PAGE_SIZE) &&
-			faultaddress < as->stack_base)
+			faultaddress < as->stack_base) {
+				is_stack_or_heap = true;
 				goto translate;
+		}
 
-		if (faultaddress >= as->heap_start && faultaddress < as->heap_end)
-			goto translate;
+		if (faultaddress >= as->heap_start && faultaddress < as->heap_end) {
+				is_stack_or_heap = true;
+				goto translate;
+		}
 
 		kprintf("FATAL EFAULT: type %d at address 0x%x\n", faulttype, faultaddress);
 		return EFAULT;
@@ -116,7 +123,7 @@ translate:
 
 	entrylo |= TLBLO_VALID;
 
-	if (found_region == NULL || found_region->writeable == 1)
+	if (is_stack_or_heap || found_region->writeable != 0)
 		entrylo |= TLBLO_DIRTY;
 
 	int spl = splhigh();
