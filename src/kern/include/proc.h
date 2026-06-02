@@ -35,7 +35,8 @@
  *
  * Note: curproc is defined by <current.h>.
  */
-
+#include "opt-waitpid.h"
+#include <types.h>
 #include "synch.h"
 #include <spinlock.h>
 
@@ -75,6 +76,8 @@ struct proc {
 	int p_exitcode;
 	struct semaphore *p_sem;
 	struct proc *p_parent;
+	pid_t p_pid;
+	bool p_waited;
 };
 
 /* This is the process structure for the kernel and for kernel-only threads. */

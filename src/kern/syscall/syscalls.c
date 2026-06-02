@@ -90,20 +90,34 @@ int sys_read(int fd, userptr_t buf_ptr, size_t size, int32_t *retval){
 	return 0;
 }
 
-int sys_exit(int exitcode){
-	curproc->p_exitcode = exitcode;
-	curproc->p_exited = true;
-	
-	struct addrspace* as = proc_getas();
-	if (as != NULL){
-		as_destroy(as);
-		proc_setas(NULL);
-	}
-	
+void
+sys__exit(int status)
+{
+#if OPT_WAITPID
+	struct proc *p = curproc;
+
+	spinlock_acquire(&p->p_lock);
+	p->p_exitcode = status & 0xff;
+	p->p_exited = true;
+	spinlock_release(&p->p_lock);
+
+	/*
+	 * Ordine fondamentale:
+	 * prima rimuovi il thread dalla proc,
+	 * poi svegli chi sta facendo proc_wait.
+	 */
+	proc_remthread(curthread);
+
+	V(p->p_sem);
+
+#else
+	struct addrspace *as = proc_getas();
+	as_destroy(as);
+#endif
+
 	thread_exit();
 
-	panic("sys_exit: thread_exit returned\n");
-	return 0;
+	panic("thread_exit returned (should not happen)\n");
 }
 
 int sys_sbrk(intptr_t amount, vaddr_t *retval) {
@@ -127,4 +141,42 @@ int sys_sbrk(intptr_t amount, vaddr_t *retval) {
 	as->heap_end = new_heap_end;
 	*retval = old_heap_end;
 	return 0;
+}
+
+int
+sys_waitpid(pid_t pid, userptr_t statusp, int options, pid_t *retval)
+{
+#if OPT_WAITPID
+	struct proc *p;
+	int status;
+	int result;
+
+	if (options != 0) {
+		return EINVAL;
+	}
+
+	p = proc_search_pid(pid);
+	if (p == NULL) {
+		return ESRCH;
+	}
+
+	status = proc_wait(p);
+
+	if (statusp != NULL) {
+		result = copyout(&status, statusp, sizeof(int));
+		if (result) {
+			return result;
+		}
+	}
+
+	*retval = pid;
+	return 0;
+#else
+	(void)pid;
+	(void)statusp;
+	(void)options;
+	(void)retval;
+
+	return ENOSYS;
+#endif
 }
