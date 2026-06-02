@@ -35,6 +35,8 @@
 #include <thread.h>
 #include <current.h>
 #include <syscall.h>
+#include <types.h>
+#include <proc.h>
 
 
 /*
@@ -75,6 +77,7 @@
  * stack, starting at sp+16 to skip over the slots for the
  * registerized values, with copyin().
  */
+
 void
 syscall(struct trapframe *tf)
 {
@@ -124,6 +127,25 @@ syscall(struct trapframe *tf)
 		case SYS_sbrk:
 			err = sys_sbrk((intptr_t) tf->tf_a0, (vaddr_t *) &retval);
 		break;
+
+		case SYS_waitpid:
+			err = sys_waitpid(
+				(pid_t)tf->tf_a0,
+				(userptr_t)tf->tf_a1,
+				(int)tf->tf_a2,
+				(pid_t *)&retval);
+		break;
+
+		case SYS_getpid:
+			retval = curproc->p_pid;
+			err = 0;
+		break;
+
+		case SYS_fork:
+			//err = sys_fork(tf, &retval);
+			err = ENOSYS;
+		break;
+
 
 	    default:
 		kprintf("Unknown syscall %d\n", callno);

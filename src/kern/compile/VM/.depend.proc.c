@@ -1,4 +1,4 @@
-proc.o: ../../proc/proc.c ../../include/types.h \
+proc.o: ../../proc/proc.c opt-WAITPID.h ../../include/types.h \
  ../../include/kern/types.h includelinks/kern/machine/types.h \
  includelinks/machine/types.h ../../include/spl.h ../../include/cdefs.h \
  ../../include/proc.h ../../include/synch.h ../../include/spinlock.h \
@@ -9,4 +9,4 @@ proc.o: ../../proc/proc.c ../../include/types.h \
  ../../include/setjmp.h includelinks/kern/machine/setjmp.h \
  ../../include/addrspace.h ../../include/vm.h includelinks/machine/vm.h \
  ../../include/pagetable.h ../../include/types.h ../../include/lib.h \
- opt-dumbvm.h ../../include/vnode.h
+ opt-dumbvm.h ../../include/vnode.h ../../include/synch.h

@@ -35,7 +35,7 @@
  *
  * Note: curproc is defined by <current.h>.
  */
-#include "opt-waitpid.h"
+#include "opt-WAITPID.h"
 #include <types.h>
 #include "synch.h"
 #include <spinlock.h>

@@ -17,6 +17,10 @@
 #include <current.h>
 #include <copyinout.h>
 
+//potrebbe essere sbagliato/ non si dovrebbe fare forwarding declaration 
+int sys_exit(int exitcode);
+pid_t sys_waitpid(pid_t pid, userptr_t statusp, int options, int *retval);
+
 int sys_write(int fd, userptr_t buf_ptr, size_t size, int32_t *retval){
 	char kernel_buf[64];
 	size_t nbytes;
@@ -90,9 +94,10 @@ int sys_read(int fd, userptr_t buf_ptr, size_t size, int32_t *retval){
 	return 0;
 }
 
-void
-sys__exit(int status)
+int
+sys_exit(int exitcode)
 {
+	(void) exitcode;
 #if OPT_WAITPID
 	struct proc *p = curproc;
 

@@ -42,7 +42,7 @@
  * process that will have more than one thread is the kernel process.
  */
 
-#include "opt-waitpid.h"
+#include "opt-WAITPID.h"
 
 #include <types.h>
 #include <spl.h>
@@ -246,7 +246,7 @@ proc_end_waitpid(struct proc *proc)
 #endif
 
 
-/*########################GESTIONE PROCESSO##########################/*
+/*########################GESTIONE PROCESSO##########################
  * Create a proc structure.
  */
 
