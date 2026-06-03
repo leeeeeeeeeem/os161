@@ -64,8 +64,9 @@ int sys_write(int fd, userptr_t buf_ptr, size_t size, int32_t *retval);
 int sys_exit(int exitcode);
 int sys_sbrk(intptr_t amount, vaddr_t *retval);
 
-//aggiunti, dovrebbe essere giusto
 int sys_waitpid(pid_t pid, userptr_t statusp, int options, int32_t *retval);
 int sys_fork(struct trapframe *tf, int32_t *retval);
+int sys_getpid(int32_t *retval);
+
 
 #endif /* _SYSCALL_H_ */

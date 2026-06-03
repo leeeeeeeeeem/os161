@@ -206,6 +206,7 @@ proc_init_waitpid(struct proc *proc, const char *name)
 	 * Evita doppia wait sulla stessa proc.
 	 */
 	proc->p_waited = false;
+	proc->p_parent = NULL;
 
 #if USE_SEMAPHORE_FOR_WAITPID
 	proc->p_sem = sem_create(name, 0);
@@ -513,15 +514,6 @@ proc_wait(struct proc *proc)
 	KASSERT(proc != NULL);
 	KASSERT(proc != kproc);
 
-	/*
-	 * EXTRA RISPETTO AL PDF:
-	 * impedisce due wait sullo stesso processo.
-	 */
-	spinlock_acquire(&proc->p_lock);
-	KASSERT(proc->p_waited == false);
-	proc->p_waited = true;
-	spinlock_release(&proc->p_lock);
-
 #if USE_SEMAPHORE_FOR_WAITPID
 	P(proc->p_sem);
 #endif
@@ -531,10 +523,6 @@ proc_wait(struct proc *proc)
 	return_status = proc->p_exitcode;
 	spinlock_release(&proc->p_lock);
 
-	/*
-	 * Qui il figlio è diventato zombie:
-	 * non ha più thread attivi e il padre lo raccoglie.
-	 */
 	proc_destroy(proc);
 
 	return return_status;
