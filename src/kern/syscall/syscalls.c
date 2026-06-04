@@ -16,6 +16,7 @@
 #include <test.h>
 #include <current.h>
 #include <copyinout.h>
+#include <mips/trapframe.h>
 
 
 int sys_write(int fd, userptr_t buf_ptr, size_t size, int32_t *retval){
@@ -94,6 +95,9 @@ int sys_read(int fd, userptr_t buf_ptr, size_t size, int32_t *retval){
 int
 sys_exit(int exitcode)
 {
+	//DEBUGGG
+	kprintf("DEBUG sys_exit: pid %d exiting with %d\n", curproc->p_pid, exitcode);
+    
 	
 #if OPT_WAITPID
 	struct proc *p = curproc;
@@ -111,11 +115,14 @@ sys_exit(int exitcode)
 	proc_remthread(curthread);
 
 	V(p->p_sem);
+	//DEBUGGG
+	kprintf("DEBUG sys_exit: V done for pid %d\n", p->p_pid);
 
 #else
 	struct addrspace *as = proc_getas();
 	proc_setas(NULL);
 	as_destroy(as);
+	(void)exitcode;
 #endif
 
 	thread_exit();
@@ -242,6 +249,8 @@ sys_fork(struct trapframe *tf, int32_t *retval)
 	 * 2. Crea la proc figlia.
 	 */
 	child_proc = proc_create_runprogram(curproc->p_name);
+	// In sys_fork, dopo proc_create_runprogram:
+	kprintf("DEBUG fork: child pid=%d\n", child_proc->p_pid);
 	if (child_proc == NULL) {
 		kfree(child_tf);
 		return ENOMEM;
@@ -272,7 +281,7 @@ sys_fork(struct trapframe *tf, int32_t *retval)
 	 */
 	result = thread_fork(curproc->p_name,
 	                     child_proc,
-	                     enter_forked_process,
+	                     (void (*)(void *, unsigned long))enter_forked_process,
 	                     child_tf,
 	                     0);
 	if (result) {

@@ -473,7 +473,8 @@ syscalls.o: ../../syscall/syscalls.c ../../include/addrspace.h \
  ../../include/synch.h ../../include/vfs.h ../../include/sfs.h \
  ../../include/fs.h ../../include/vnode.h ../../include/kern/sfs.h \
  ../../include/syscall.h ../../include/test.h ../../include/current.h \
- includelinks/machine/current.h ../../include/copyinout.h
+ includelinks/machine/current.h ../../include/copyinout.h \
+ includelinks/mips/trapframe.h
 time_syscalls.o: ../../syscall/time_syscalls.c ../../include/types.h \
  ../../include/kern/types.h includelinks/kern/machine/types.h \
  includelinks/machine/types.h ../../include/clock.h \
@@ -858,7 +859,8 @@ syscall.o: ../../arch/mips/syscall/syscall.c ../../include/types.h \
  opt-hangman.h includelinks/machine/spinlock.h ../../include/threadlist.h \
  includelinks/machine/thread.h ../../include/setjmp.h \
  includelinks/kern/machine/setjmp.h ../../include/current.h \
- includelinks/machine/current.h ../../include/syscall.h
+ includelinks/machine/current.h ../../include/syscall.h \
+ ../../include/proc.h opt-WAITPID.h ../../include/synch.h
 cpu.o: ../../arch/mips/thread/cpu.c ../../include/types.h \
  ../../include/kern/types.h includelinks/kern/machine/types.h \
  includelinks/machine/types.h ../../include/lib.h ../../include/cdefs.h \

@@ -16,4 +16,5 @@ syscalls.o: ../../syscall/syscalls.c ../../include/addrspace.h \
  ../../include/synch.h ../../include/vfs.h ../../include/sfs.h \
  ../../include/fs.h ../../include/vnode.h ../../include/kern/sfs.h \
  ../../include/syscall.h ../../include/test.h ../../include/current.h \
- includelinks/machine/current.h ../../include/copyinout.h
+ includelinks/machine/current.h ../../include/copyinout.h \
+ includelinks/mips/trapframe.h

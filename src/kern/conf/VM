@@ -34,3 +34,4 @@ options hello
 options ascii
 options binhex
 options syscalls
+options WAITPID

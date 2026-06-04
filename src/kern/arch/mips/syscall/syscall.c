@@ -90,6 +90,8 @@ syscall(struct trapframe *tf)
 	KASSERT(curthread->t_iplhigh_count == 0);
 
 	callno = tf->tf_v0;
+	//DEBUGGG
+	kprintf("DEBUG syscall: callno=%d\n", callno);  // AGGIUNGI QUI
 
 	/*
 	 * Initialize retval to 0. Many of the system calls don't

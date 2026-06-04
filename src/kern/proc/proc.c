@@ -509,6 +509,9 @@ proc_remthread(struct thread *t)
 int
 proc_wait(struct proc *proc)
 {
+	//DEBUUUUG
+    kprintf("DEBUG proc_wait: waiting on pid %d\n", proc->p_pid);
+    
 	int return_status;
 
 	KASSERT(proc != NULL);
@@ -516,6 +519,8 @@ proc_wait(struct proc *proc)
 
 #if USE_SEMAPHORE_FOR_WAITPID
 	P(proc->p_sem);
+	//DEBUUUUG
+	kprintf("DEBUG proc_wait: pid %d exited with %d\n", proc->p_pid, proc->p_exitcode);
 #endif
 
 	spinlock_acquire(&proc->p_lock);
