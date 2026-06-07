@@ -221,9 +221,18 @@ sys_waitpid(pid_t pid, userptr_t statusp, int options, int32_t *retval)
 #endif
 }
 
+static void
+fork_thread_entry(void *tf, unsigned long junk)
+{
+        (void)junk;
+        enter_forked_process((struct trapframe *)tf);
+}
+
+
 int
 sys_fork(struct trapframe *tf, int32_t *retval)
 {
+	kprintf("DEBUG sys_fork: tf_epc=0x%x tf_v0=%d\n", tf->tf_epc, tf->tf_v0);
 	struct trapframe *child_tf;
 	struct proc *child_proc;
 	struct addrspace *child_as;
@@ -265,6 +274,7 @@ sys_fork(struct trapframe *tf, int32_t *retval)
 
 	/*
 	 * 4. Copia l'address space del padre nel figlio.
+	 	sotto un lock senno potrebbe attivare l'address space sbagliato
 	 */
 	result = as_copy(curproc->p_addrspace, &child_as);
 	if (result) {
@@ -273,7 +283,9 @@ sys_fork(struct trapframe *tf, int32_t *retval)
 		return result;
 	}
 
+	spinlock_acquire(&child_proc->p_lock);
 	child_proc->p_addrspace = child_as;
+	spinlock_release(&child_proc->p_lock);
 
 	/*
 	 * 5. Crea il thread figlio.
@@ -281,7 +293,7 @@ sys_fork(struct trapframe *tf, int32_t *retval)
 	 */
 	result = thread_fork(curproc->p_name,
 	                     child_proc,
-	                     (void (*)(void *, unsigned long))enter_forked_process,
+	                     fork_thread_entry,
 	                     child_tf,
 	                     0);
 	if (result) {

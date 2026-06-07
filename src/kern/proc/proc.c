@@ -154,7 +154,9 @@ proc_getpid(struct proc *proc)
 static
 void
 proc_init_waitpid(struct proc *proc, const char *name)
-{
+{	
+	kprintf("DEBUG init_waitpid: active=%d last_i=%d\n", processTable.active, processTable.last_i);
+    
 	int i;
 	int count;
 
@@ -208,12 +210,16 @@ proc_init_waitpid(struct proc *proc, const char *name)
 	proc->p_waited = false;
 	proc->p_parent = NULL;
 
+	kprintf("DEBUG init_waitpid: assigned pid=%d\n", proc->p_pid);
+
 #if USE_SEMAPHORE_FOR_WAITPID
 	proc->p_sem = sem_create(name, 0);
 	if (proc->p_sem == NULL) {
 		panic("proc_init_waitpid: sem_create failed\n");
 	}
 #endif
+
+
 }
 
 /*

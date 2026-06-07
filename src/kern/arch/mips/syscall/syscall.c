@@ -37,6 +37,7 @@
 #include <syscall.h>
 #include <types.h>
 #include <proc.h>
+#include <addrspace.h>
 
 
 /*
@@ -129,6 +130,7 @@ syscall(struct trapframe *tf)
         break;
 
     case SYS_fork:
+		kprintf("DEBUG: entering SYS_fork case\n");
         err = sys_fork(tf, &retval);
         break;
 
@@ -140,10 +142,12 @@ syscall(struct trapframe *tf)
         break;
 
     case SYS_getpid:
+    	kprintf("DEBUG getpid: curproc=%p pid=%d\n", curproc, curproc ? curproc->p_pid : -1);
         err = sys_getpid(&retval);
         break;
 
     case SYS__exit:
+		kprintf("DEBUG _exit: pid=%d code=%d\n", curproc->p_pid, (int)tf->tf_a0);
         err = sys_exit((int) tf->tf_a0);
         break;
 
@@ -218,7 +222,15 @@ enter_forked_process(struct trapframe *tf)
 	/*
 	 * Salta l'istruzione syscall, altrimenti il figlio riesegue fork().
 	 */
-	child_tf.tf_epc += 4;
+	kprintf("DEBUG enter_forked: child_tf.tf_epc=0x%x\n", child_tf.tf_epc);
+    child_tf.tf_epc += 4;
+    kprintf("DEBUG enter_forked: after +4 epc=0x%x\n", child_tf.tf_epc);
+
+	/* Attiva l'address space del figlio, non basta as activate */
+	struct addrspace *as = curproc->p_addrspace;
+	KASSERT(as != NULL);
+	proc_setas(as);
+	as_activate(); 
 
 	mips_usermode(&child_tf);
 
