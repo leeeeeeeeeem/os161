@@ -96,38 +96,33 @@ int
 sys_exit(int exitcode)
 {
 	//DEBUGGG
-	kprintf("DEBUG sys_exit: pid %d exiting with %d\n", curproc->p_pid, exitcode);
-    
+	// kprintf("DEBUG sys_exit: pid %d exiting with %d\n", curproc->p_pid, exitcode);   
 	
 #if OPT_WAITPID
-	struct proc *p = curproc;
+    struct proc *p = curproc;
 
-	spinlock_acquire(&p->p_lock);
-	p->p_exitcode = exitcode & 0xff;
-	p->p_exited = true;
-	spinlock_release(&p->p_lock);
+    struct addrspace *as = proc_getas();
+    proc_setas(NULL);
+    as_deactivate();
+    as_destroy(as);
 
-	/*
-	 * Ordine fondamentale:
-	 * prima rimuovi il thread dalla proc,
-	 * poi svegli chi sta facendo proc_wait.
-	 */
-	proc_remthread(curthread);
+    spinlock_acquire(&p->p_lock);
+    p->p_exitcode = exitcode & 0xff;
+    p->p_exited = true;
+    spinlock_release(&p->p_lock);
 
-	V(p->p_sem);
-	//DEBUGGG
-	kprintf("DEBUG sys_exit: V done for pid %d\n", p->p_pid);
+    proc_remthread(curthread);
+    V(p->p_sem);
 
 #else
-	struct addrspace *as = proc_getas();
-	proc_setas(NULL);
-	as_destroy(as);
-	(void)exitcode;
+    struct addrspace *as = proc_getas();
+    proc_setas(NULL);
+    as_destroy(as);
+    (void)exitcode;
 #endif
 
-	thread_exit();
-
-	panic("thread_exit returned (should not happen)\n");
+    thread_exit();
+    panic("thread_exit returned\n");
 }
 
 int sys_sbrk(intptr_t amount, vaddr_t *retval) {
@@ -259,7 +254,7 @@ sys_fork(struct trapframe *tf, int32_t *retval)
 	 */
 	child_proc = proc_create_runprogram(curproc->p_name);
 	// In sys_fork, dopo proc_create_runprogram:
-	kprintf("DEBUG fork: child pid=%d\n", child_proc->p_pid);
+	//kprintf("DEBUG fork: child pid=%d\n", child_proc->p_pid);
 	if (child_proc == NULL) {
 		kfree(child_tf);
 		return ENOMEM;
