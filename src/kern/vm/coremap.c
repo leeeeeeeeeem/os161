@@ -1,4 +1,5 @@
 #include "types.h"
+#include "spinlock.h"
 #include "lib.h"
 #include "vm.h"
 #include "coremap.h"
@@ -6,6 +7,9 @@
 struct coremap_entry* coremap;
 uint32_t total_frames;
 
+extern struct spinlock mem_lock;
+
+uint64_t fifo_alloc_counter = 0;
 
 void coremap_init(void){
 	vaddr_t size = ram_getsize();
@@ -21,6 +25,9 @@ void coremap_init(void){
 
 	for (uint32_t i = 0; i < total_frames; i++){
 		paddr_t page_addr = i * PAGE_SIZE;
+		coremap[i].owner = NULL;
+		coremap[i].vaddr = 0;
+		coremap[i].counter = 0;
 		if (page_addr < boundary){
 			coremap[i].occupancy_state = FIXED;
 			coremap[i].chunk_size = 0;
@@ -33,15 +40,18 @@ void coremap_init(void){
 }
 
 vaddr_t coremap_alloc(unsigned npages){
-	if (npages > 255) // chunk size defined as uint8
+	if (npages > 255)
 		return 0; 
 
 	uint32_t first_page = 0;
 	uint8_t pages_found = 0;
+
+retry:
+	pages_found = 0;
 	for (uint32_t i = 0; i < total_frames; i++){
 		switch (coremap[i].occupancy_state) {
 			case FIXED:
-				pages_found = 0; // this should be useless but here as a safeguard
+				pages_found = 0; //dovrebbe essere inutile ma qui per sicurezza
 				break;
 			case FREE: 
 				if (pages_found == 0)
@@ -56,6 +66,13 @@ vaddr_t coremap_alloc(unsigned npages){
 			case IN_USE:
 				pages_found = 0;
 				break;
+		}
+	}
+
+	if (npages == 1) {
+		paddr_t evicted_paddr = coremap_evict_one();
+		if (evicted_paddr != 0) {
+			goto retry;
 		}
 	}
 
@@ -87,5 +104,24 @@ void coremap_free(vaddr_t addr){
 
 		coremap[i].occupancy_state = FREE;
 		coremap[i].chunk_size = 0;
+		coremap[i].owner = NULL;
+		coremap[i].vaddr = 0;
+		coremap[i].counter = 0;
 	}
+}
+
+void coremap_set_owner(uint32_t pframe, struct addrspace *as, vaddr_t vaddr) {
+	spinlock_acquire(&mem_lock);
+	KASSERT(pframe < total_frames);
+	KASSERT(coremap[pframe].occupancy_state == IN_USE);
+	coremap[pframe].owner = as;
+	coremap[pframe].vaddr = vaddr & PAGE_FRAME;
+	coremap[pframe].counter = fifo_alloc_counter++;
+	spinlock_release(&mem_lock);
+}
+
+paddr_t coremap_evict_one(void) {
+	//logica di swap!
+	(void)fifo_alloc_counter;
+	return 0;
 }

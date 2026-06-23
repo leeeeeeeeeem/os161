@@ -11,7 +11,7 @@
 #include <spl.h>
 
 bool vm_ready = false;
-static struct spinlock mem_lock = SPINLOCK_INITIALIZER;
+struct spinlock mem_lock = SPINLOCK_INITIALIZER;
 
 void vm_bootstrap(void) {
 	coremap_init();

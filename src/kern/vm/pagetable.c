@@ -2,6 +2,21 @@
 #include <kern/errno.h>
 #include <addrspace.h>
 #include <vm.h>
+#include <coremap.h>
+
+// Temporary stubs for swap operations (to be implemented in Step 4)
+void swap_free(unsigned slot);
+int swap_read(vaddr_t kvaddr, unsigned slot);
+
+void swap_free(unsigned slot) {
+	(void)slot;
+}
+
+int swap_read(vaddr_t kvaddr, unsigned slot) {
+	(void)kvaddr;
+	(void)slot;
+	return 0;
+}
 
 struct pagedir* pagetable_create(void) {
 	struct pagedir* dir = kmalloc(sizeof(struct pagedir));
@@ -61,9 +76,12 @@ void pagetable_destroy(struct pagedir *pt) {
 
 		if (entry != NULL){
 			for (int j = 0; j < PT_SIZE; j++) {
-				paddr_t paddr = entry->entries[j];
-				if (paddr != 0)
-					free_kpages(PADDR_TO_KVADDR(paddr));
+				paddr_t pte = entry->entries[j];
+				if (pte != 0 && (pte & PTE_SWAPPED) == 0) {
+					free_kpages(PADDR_TO_KVADDR(pte & PAGE_FRAME));
+				} else if (pte & PTE_SWAPPED) {
+					swap_free(pte >> 12);
+				}
 			}
 			kfree(entry);
 		}
@@ -71,7 +89,8 @@ void pagetable_destroy(struct pagedir *pt) {
 	kfree(pt);
 }
 
-struct pagedir* pagetable_copy(struct pagedir* pt) {
+struct pagedir* pagetable_copy(struct addrspace *old, struct addrspace *newas) {
+	struct pagedir* pt = old->pagetable;
 	struct pagedir* new_pt = pagetable_create();
 	if (new_pt == NULL)
 		return NULL;
@@ -88,9 +107,9 @@ struct pagedir* pagetable_copy(struct pagedir* pt) {
 			}
 
 			for (int j = 0; j < PT_SIZE; j++) {
-				paddr_t paddr = entry->entries[j];
+				paddr_t pte = entry->entries[j];
 
-				if (paddr != 0){
+				if (pte != 0 && (pte & PTE_SWAPPED) == 0){
 					vaddr_t new_vaddr = alloc_kpages(1);
 					if (new_vaddr == 0){
 						pagetable_destroy(new_pt);
@@ -99,14 +118,53 @@ struct pagedir* pagetable_copy(struct pagedir* pt) {
 					
 					memcpy(
 						(void*) new_vaddr, 
-						(void*) PADDR_TO_KVADDR(paddr), 
+						(void*) PADDR_TO_KVADDR(pte & PAGE_FRAME), 
 						PAGE_SIZE
 					);
 
-					new_pt->tables[i]->entries[j] = KVADDR_TO_PADDR(new_vaddr);
+					new_pt->tables[i]->entries[j] = KVADDR_TO_PADDR(new_vaddr) | PTE_PRESENT;
+					
+					// Update coremap owner
+					uint32_t pframe = KVADDR_TO_PADDR(new_vaddr) / PAGE_SIZE;
+					coremap_set_owner(pframe, newas, (i << 22) | (j << 12));
+				}
+				else if (pte & PTE_SWAPPED) {
+					vaddr_t new_vaddr = alloc_kpages(1);
+					if (new_vaddr == 0) {
+						pagetable_destroy(new_pt);
+						return NULL;
+					}
+
+					int err = swap_read(new_vaddr, pte >> 12);
+					if (err) {
+						free_kpages(new_vaddr);
+						pagetable_destroy(new_pt);
+						return NULL;
+					}
+
+					new_pt->tables[i]->entries[j] = KVADDR_TO_PADDR(new_vaddr) | PTE_PRESENT;
+					
+					// Update coremap owner
+					uint32_t pframe = KVADDR_TO_PADDR(new_vaddr) / PAGE_SIZE;
+					coremap_set_owner(pframe, newas, (i << 22) | (j << 12));
 				}
 			}
 		}
 	}
 	return new_pt;
+}
+
+paddr_t *pagetable_get_entry(struct pagedir *pt, vaddr_t vaddr) {
+	uint32_t dir_idx = GET_DIR_INDEX(vaddr);
+	uint32_t pt_idx = GET_PT_INDEX(vaddr);
+
+	struct pagetable* pt_lv2 = pt->tables[dir_idx];
+	if (pt_lv2 == NULL) {
+		pt_lv2 = pagetable_create_lv2();
+		if (pt_lv2 == NULL)
+			return NULL;
+		pt->tables[dir_idx] = pt_lv2;
+	}
+
+	return &pt_lv2->entries[pt_idx];
 }

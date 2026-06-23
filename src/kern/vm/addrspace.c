@@ -73,7 +73,7 @@ int as_copy(struct addrspace *old, struct addrspace **ret) {
 	newas->heap_start = old->heap_start;
 	newas->heap_end = old->heap_end;
 
-	newas->pagetable = pagetable_copy(old->pagetable);
+	newas->pagetable = pagetable_copy(old, newas);
 	if (newas->pagetable == NULL && old->pagetable != NULL) {
 		as_destroy(newas);
 		return ENOMEM;
