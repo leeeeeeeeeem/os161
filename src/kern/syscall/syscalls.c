@@ -111,8 +111,9 @@ sys_exit(int exitcode)
     p->p_exited = true;
     spinlock_release(&p->p_lock);
 
+	V(p->p_sem);
     proc_remthread(curthread);
-    V(p->p_sem);
+
 
 #else
     struct addrspace *as = proc_getas();
@@ -227,7 +228,6 @@ fork_thread_entry(void *tf, unsigned long junk)
 int
 sys_fork(struct trapframe *tf, int32_t *retval)
 {
-	kprintf("DEBUG sys_fork: tf_epc=0x%x tf_v0=%d\n", tf->tf_epc, tf->tf_v0);
 	struct trapframe *child_tf;
 	struct proc *child_proc;
 	struct addrspace *child_as;

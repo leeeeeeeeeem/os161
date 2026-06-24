@@ -155,7 +155,6 @@ static
 void
 proc_init_waitpid(struct proc *proc, const char *name)
 {	
-	kprintf("DEBUG init_waitpid: active=%d last_i=%d\n", processTable.active, processTable.last_i);
     
 	int i;
 	int count;
@@ -210,7 +209,6 @@ proc_init_waitpid(struct proc *proc, const char *name)
 	proc->p_waited = false;
 	proc->p_parent = NULL;
 
-	kprintf("DEBUG init_waitpid: assigned pid=%d\n", proc->p_pid);
 
 #if USE_SEMAPHORE_FOR_WAITPID
 	proc->p_sem = sem_create(name, 0);
@@ -515,8 +513,6 @@ proc_remthread(struct thread *t)
 int
 proc_wait(struct proc *proc)
 {
-	//DEBUUUUG
-    kprintf("DEBUG proc_wait: waiting on pid %d\n", proc->p_pid);
     
 	int return_status;
 
@@ -525,8 +521,6 @@ proc_wait(struct proc *proc)
 
 #if USE_SEMAPHORE_FOR_WAITPID
 	P(proc->p_sem);
-	//DEBUUUUG
-	kprintf("DEBUG proc_wait: pid %d exited with %d\n", proc->p_pid, proc->p_exitcode);
 #endif
 
 	spinlock_acquire(&proc->p_lock);
