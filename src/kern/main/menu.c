@@ -155,6 +155,12 @@ common_prog(int nargs, char **args)
 		proc_destroy(proc);
 		return result;
 	}
+	#if OPT_WAITPID
+		int exit_code;
+
+		exit_code = proc_wait(proc);
+		kprintf("Program exited with code %d\n", exit_code);
+	#endif
 
 	return 0;
 }

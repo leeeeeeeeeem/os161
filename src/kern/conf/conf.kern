@@ -332,7 +332,6 @@ optfile   hangman thread/hangman.c
 #
 # Process system
 #
-
 file      proc/proc.c
 
 #
@@ -439,6 +438,10 @@ defoption netfs
 
 defoption ascii
 defoption binhex
+
+#####WAIT_PID#############
+
+defoption WAITPID
 
 ########################################
 #                                      #

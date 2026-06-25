@@ -12,8 +12,9 @@ syscalls.o: ../../syscall/syscalls.c ../../include/addrspace.h \
  includelinks/machine/spinlock.h ../../include/thread.h \
  ../../include/array.h ../../include/threadlist.h \
  includelinks/machine/thread.h ../../include/setjmp.h \
- includelinks/kern/machine/setjmp.h ../../include/proc.h \
+ includelinks/kern/machine/setjmp.h ../../include/proc.h opt-WAITPID.h \
  ../../include/synch.h ../../include/vfs.h ../../include/sfs.h \
  ../../include/fs.h ../../include/vnode.h ../../include/kern/sfs.h \
  ../../include/syscall.h ../../include/test.h ../../include/current.h \
- includelinks/machine/current.h ../../include/copyinout.h
+ includelinks/machine/current.h ../../include/copyinout.h \
+ includelinks/mips/trapframe.h

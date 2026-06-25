@@ -35,6 +35,9 @@
 #include <thread.h>
 #include <current.h>
 #include <syscall.h>
+#include <types.h>
+#include <proc.h>
+#include <addrspace.h>
 
 
 /*
@@ -75,6 +78,7 @@
  * stack, starting at sp+16 to skip over the slots for the
  * registerized values, with copyin().
  */
+
 void
 syscall(struct trapframe *tf)
 {
@@ -87,6 +91,7 @@ syscall(struct trapframe *tf)
 	KASSERT(curthread->t_iplhigh_count == 0);
 
 	callno = tf->tf_v0;
+ // AGGIUNGI QUI
 
 	/*
 	 * Initialize retval to 0. Many of the system calls don't
@@ -100,35 +105,56 @@ syscall(struct trapframe *tf)
 	retval = 0;
 
 	switch (callno) {
-	    case SYS_reboot:
-		err = sys_reboot(tf->tf_a0);
-		break;
+    case SYS_reboot:
+        err = sys_reboot(tf->tf_a0);
+        break;
 
-	    case SYS___time:
-		err = sys___time((userptr_t)tf->tf_a0,
-				 (userptr_t)tf->tf_a1);
-		break;
+    case SYS___time:
+        err = sys___time((userptr_t) tf->tf_a0,
+                         (userptr_t) tf->tf_a1);
+        break;
 
-		case SYS_write:
-			err = sys_write((int) tf->tf_a0, (userptr_t) tf->tf_a1, (size_t) tf->tf_a2, &retval);
-		break;
+    case SYS_write:
+        err = sys_write((int) tf->tf_a0,
+                        (userptr_t) tf->tf_a1,
+                        (size_t) tf->tf_a2,
+                        &retval);
+        break;
 
-		case SYS_read:
-			err = sys_read((int) tf->tf_a0, (userptr_t) tf->tf_a1, (size_t) tf->tf_a2, &retval);
-		break;
+    case SYS_read:
+        err = sys_read((int) tf->tf_a0,
+                       (userptr_t) tf->tf_a1,
+                       (size_t) tf->tf_a2,
+                       &retval);
+        break;
 
-		case SYS__exit:
-			err = sys_exit((int) tf->tf_a0);
-		break;
+    case SYS_fork:
+        err = sys_fork(tf, &retval);
+        break;
 
-		case SYS_sbrk:
-			err = sys_sbrk((intptr_t) tf->tf_a0, (vaddr_t *) &retval);
-		break;
+    case SYS_waitpid:
+        err = sys_waitpid((pid_t) tf->tf_a0,
+                          (userptr_t) tf->tf_a1,
+                          (int) tf->tf_a2,
+                          &retval);
+        break;
 
-	    default:
-		kprintf("Unknown syscall %d\n", callno);
-		err = ENOSYS;
-		break;
+    case SYS_getpid:
+        err = sys_getpid(&retval);
+        break;
+
+    case SYS__exit:
+        err = sys_exit((int) tf->tf_a0);
+        break;
+
+    case SYS_sbrk:
+        err = sys_sbrk((intptr_t) tf->tf_a0,
+                       (vaddr_t *) &retval);
+        break;
+
+    default:
+        err = ENOSYS;
+        break;
 	}
 
 
@@ -171,5 +197,35 @@ syscall(struct trapframe *tf)
 void
 enter_forked_process(struct trapframe *tf)
 {
-	(void)tf;
+	struct trapframe child_tf;
+
+	KASSERT(tf != NULL);
+
+	/*
+	 * Copio il trapframe sullo stack del figlio e libero quello allocato
+	 * con kmalloc dentro sys_fork.
+	 */
+	child_tf = *tf;
+	kfree(tf);
+
+	/*
+	 * Nel figlio fork() deve ritornare 0.
+	 */
+	child_tf.tf_v0 = 0;
+	child_tf.tf_a3 = 0;
+
+	/*
+	 * Salta l'istruzione syscall, altrimenti il figlio riesegue fork().
+	 */
+    child_tf.tf_epc += 4;
+
+	/* Attiva l'address space del figlio, non basta as activate */
+	struct addrspace *as = curproc->p_addrspace;
+	KASSERT(as != NULL);
+	proc_setas(as);
+	as_activate(); 
+
+	mips_usermode(&child_tf);
+
+	panic("enter_forked_process: mips_usermode returned\n");
 }

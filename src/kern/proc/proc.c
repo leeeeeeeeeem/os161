@@ -42,21 +42,219 @@
  * process that will have more than one thread is the kernel process.
  */
 
+#include "opt-WAITPID.h"
+
 #include <types.h>
 #include <spl.h>
 #include <proc.h>
 #include <current.h>
 #include <addrspace.h>
 #include <vnode.h>
+#include <synch.h>
+#include <thread.h>
 
 /*
  * The process for the kernel; this holds all the kernel-only threads.
  */
 struct proc *kproc;
 
+#if OPT_WAITPID
+
 /*
+ * Numero massimo di processi gestiti dalla tabella.
+ *
+ * EXTRA RISPETTO AL PDF:
+ * Il PDF usa MAX_PROC ma non mostra dove definirlo.
+ */
+#define MAX_PROC 128
+
+/*
+ * Per semplicità uso il semaforo per waitpid.
+ *
+ * EXTRA RISPETTO AL PDF:
+ * Il PDF parla sia di semaforo sia di CV+lock.
+ * Qui scegliamo semaforo perché è sufficiente per il tuo problema
+ * e richiede meno modifiche.
+ */
+#define USE_SEMAPHORE_FOR_WAITPID 1
+
+/*
+ * Tabella globale dei processi:
+ * indice = pid
+ * valore = puntatore alla struct proc
+ */
+static struct _processTable {
+	int active;
+	struct proc *proc[MAX_PROC + 1]; /* pid 0 non usato */
+	int last_i;
+	struct spinlock lk;
+} processTable;
+
+#endif
+
+/*##############FUNZIONI AUSILIARIE WAIT_PID##########################*/
+
+#if OPT_WAITPID
+
+/*
+ * Cerca un processo tramite pid.
+ * Serve a sys_waitpid(pid, ...).
+ */
+struct proc *
+proc_search_pid(pid_t pid)
+{
+	struct proc *p;
+
+	if (pid <= 0 || pid > MAX_PROC) {
+		return NULL;
+	}
+
+	spinlock_acquire(&processTable.lk);
+	p = processTable.proc[pid];
+	spinlock_release(&processTable.lk);
+
+	if (p == NULL) {
+		return NULL;
+	}
+
+	KASSERT(p->p_pid == pid);
+
+	return p;
+}
+
+/*
+ * Restituisce il pid di una proc.
+ *
+ * EXTRA RISPETTO AL PDF:
+ * Il PDF dice di usare proc->p_pid o sys_getpid(proc).
+ * Questa funzione evita di accedere direttamente al campo p_pid
+ * da altri file.
+ */
+pid_t
+proc_getpid(struct proc *proc)
+{
+	pid_t pid;
+
+	KASSERT(proc != NULL);
+
+	spinlock_acquire(&proc->p_lock);
+	pid = proc->p_pid;
+	spinlock_release(&proc->p_lock);
+
+	return pid;
+}
+
+/*
+ * Inizializza i campi necessari per waitpid:
+ * - assegna un pid
+ * - registra la proc nella tabella
+ * - inizializza stato di uscita
+ * - crea il semaforo su cui il padre aspetterà
+ */
+static
+void
+proc_init_waitpid(struct proc *proc, const char *name)
+{	
+    
+	int i;
+	int count;
+
+	KASSERT(proc != NULL);
+
+	spinlock_acquire(&processTable.lk);
+
+	proc->p_pid = 0;
+
+	i = processTable.last_i + 1;
+	if (i > MAX_PROC) {
+		i = 1;
+	}
+
+	/*
+	 * EXTRA RISPETTO AL PDF:
+	 * Nel PDF il ciclo è potenzialmente problematico perché pid 0 non è usato.
+	 * Qui uso count per fare al massimo MAX_PROC tentativi.
+	 */
+	for (count = 0; count < MAX_PROC; count++) {
+		if (processTable.proc[i] == NULL) {
+			processTable.proc[i] = proc;
+			processTable.last_i = i;
+			proc->p_pid = i;
+			break;
+		}
+
+		i++;
+		if (i > MAX_PROC) {
+			i = 1;
+		}
+	}
+
+	spinlock_release(&processTable.lk);
+
+	if (proc->p_pid == 0) {
+		panic("too many processes: process table is full\n");
+	}
+
+	/*
+	 * Nel tuo proc.c esistono già p_exitcode e p_exited,
+	 * quindi NON aggiungo p_status come nel PDF.
+	 */
+	proc->p_exitcode = 0;
+	proc->p_exited = false;
+
+	/*
+	 * EXTRA RISPETTO AL PDF:
+	 * Evita doppia wait sulla stessa proc.
+	 */
+	proc->p_waited = false;
+	proc->p_parent = NULL;
+
+
+#if USE_SEMAPHORE_FOR_WAITPID
+	proc->p_sem = sem_create(name, 0);
+	if (proc->p_sem == NULL) {
+		panic("proc_init_waitpid: sem_create failed\n");
+	}
+#endif
+
+
+}
+
+/*
+ * Fine gestione waitpid:
+ * - rimuove la proc dalla tabella globale
+ * - distrugge il semaforo
+ */
+static
+void
+proc_end_waitpid(struct proc *proc)
+{
+	int pid;
+
+	KASSERT(proc != NULL);
+
+	pid = proc->p_pid;
+
+	KASSERT(pid > 0 && pid <= MAX_PROC);
+
+	spinlock_acquire(&processTable.lk);
+	KASSERT(processTable.proc[pid] == proc);
+	processTable.proc[pid] = NULL;
+	spinlock_release(&processTable.lk);
+
+#if USE_SEMAPHORE_FOR_WAITPID
+	sem_destroy(proc->p_sem);
+	proc->p_sem = NULL;
+#endif
+}
+
+#endif
+
+
+/*########################GESTIONE PROCESSO##########################
  * Create a proc structure.
  */
+
 static
 struct proc *
 proc_create(const char *name)
@@ -83,6 +281,10 @@ proc_create(const char *name)
 
 	/* VFS fields */
 	proc->p_cwd = NULL;
+
+	#if OPT_WAITPID
+		proc_init_waitpid(proc, name);
+	#endif
 
 	return proc;
 }
@@ -168,6 +370,11 @@ proc_destroy(struct proc *proc)
 	}
 
 	KASSERT(proc->p_numthreads == 0);
+
+	#if OPT_WAITPID
+		proc_end_waitpid(proc);
+	#endif
+
 	spinlock_cleanup(&proc->p_lock);
 
 	kfree(proc->p_name);
@@ -177,15 +384,28 @@ proc_destroy(struct proc *proc)
 /*
  * Create the process structure for the kernel.
  */
+
 void
 proc_bootstrap(void)
 {
+#if OPT_WAITPID
+	int i;
+
+	processTable.active = 1;
+	processTable.last_i = 0;
+
+	for (i = 0; i <= MAX_PROC; i++) {
+		processTable.proc[i] = NULL;
+	}
+
+	spinlock_init(&processTable.lk);
+#endif
+
 	kproc = proc_create("[kernel]");
 	if (kproc == NULL) {
 		panic("proc_create for kproc failed\n");
 	}
 }
-
 /*
  * Create a fresh proc for use by runprogram.
  *
@@ -278,6 +498,42 @@ proc_remthread(struct thread *t)
 	splx(spl);
 }
 
+#if OPT_WAITPID
+
+/*
+ * Attende la terminazione del processo figlio.
+ *
+ * Questa è la funzione usata dal kernel/menu:
+ *
+ *     exit_code = proc_wait(proc);
+ *
+ * Quando il figlio chiama sys__exit(), fa V(proc->p_sem),
+ * quindi questa P si sblocca.
+ */
+int
+proc_wait(struct proc *proc)
+{
+    
+	int return_status;
+
+	KASSERT(proc != NULL);
+	KASSERT(proc != kproc);
+
+#if USE_SEMAPHORE_FOR_WAITPID
+	P(proc->p_sem);
+#endif
+
+	spinlock_acquire(&proc->p_lock);
+	KASSERT(proc->p_exited == true);
+	return_status = proc->p_exitcode;
+	spinlock_release(&proc->p_lock);
+
+	proc_destroy(proc);
+
+	return return_status;
+}
+
+#endif
 /*
  * Fetch the address space of (the current) process.
  *
