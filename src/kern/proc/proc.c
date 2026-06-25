@@ -60,46 +60,21 @@ struct proc *kproc;
 
 #if OPT_WAITPID
 
-/*
- * Numero massimo di processi gestiti dalla tabella.
- *
- * EXTRA RISPETTO AL PDF:
- * Il PDF usa MAX_PROC ma non mostra dove definirlo.
- */
 #define MAX_PROC 128
 
-/*
- * Per semplicità uso il semaforo per waitpid.
- *
- * EXTRA RISPETTO AL PDF:
- * Il PDF parla sia di semaforo sia di CV+lock.
- * Qui scegliamo semaforo perché è sufficiente per il tuo problema
- * e richiede meno modifiche.
- */
 #define USE_SEMAPHORE_FOR_WAITPID 1
 
-/*
- * Tabella globale dei processi:
- * indice = pid
- * valore = puntatore alla struct proc
- */
 static struct _processTable {
 	int active;
-	struct proc *proc[MAX_PROC + 1]; /* pid 0 non usato */
+	struct proc *proc[MAX_PROC + 1];
 	int last_i;
 	struct spinlock lk;
 } processTable;
 
 #endif
 
-/*##############FUNZIONI AUSILIARIE WAIT_PID##########################*/
-
 #if OPT_WAITPID
 
-/*
- * Cerca un processo tramite pid.
- * Serve a sys_waitpid(pid, ...).
- */
 struct proc *
 proc_search_pid(pid_t pid)
 {
@@ -122,14 +97,6 @@ proc_search_pid(pid_t pid)
 	return p;
 }
 
-/*
- * Restituisce il pid di una proc.
- *
- * EXTRA RISPETTO AL PDF:
- * Il PDF dice di usare proc->p_pid o sys_getpid(proc).
- * Questa funzione evita di accedere direttamente al campo p_pid
- * da altri file.
- */
 pid_t
 proc_getpid(struct proc *proc)
 {
@@ -144,13 +111,6 @@ proc_getpid(struct proc *proc)
 	return pid;
 }
 
-/*
- * Inizializza i campi necessari per waitpid:
- * - assegna un pid
- * - registra la proc nella tabella
- * - inizializza stato di uscita
- * - crea il semaforo su cui il padre aspetterà
- */
 static
 void
 proc_init_waitpid(struct proc *proc, const char *name)
@@ -170,11 +130,6 @@ proc_init_waitpid(struct proc *proc, const char *name)
 		i = 1;
 	}
 
-	/*
-	 * EXTRA RISPETTO AL PDF:
-	 * Nel PDF il ciclo è potenzialmente problematico perché pid 0 non è usato.
-	 * Qui uso count per fare al massimo MAX_PROC tentativi.
-	 */
 	for (count = 0; count < MAX_PROC; count++) {
 		if (processTable.proc[i] == NULL) {
 			processTable.proc[i] = proc;
@@ -195,17 +150,9 @@ proc_init_waitpid(struct proc *proc, const char *name)
 		panic("too many processes: process table is full\n");
 	}
 
-	/*
-	 * Nel tuo proc.c esistono già p_exitcode e p_exited,
-	 * quindi NON aggiungo p_status come nel PDF.
-	 */
 	proc->p_exitcode = 0;
 	proc->p_exited = false;
 
-	/*
-	 * EXTRA RISPETTO AL PDF:
-	 * Evita doppia wait sulla stessa proc.
-	 */
 	proc->p_waited = false;
 	proc->p_parent = NULL;
 
@@ -220,11 +167,6 @@ proc_init_waitpid(struct proc *proc, const char *name)
 
 }
 
-/*
- * Fine gestione waitpid:
- * - rimuove la proc dalla tabella globale
- * - distrugge il semaforo
- */
 static
 void
 proc_end_waitpid(struct proc *proc)
@@ -251,7 +193,7 @@ proc_end_waitpid(struct proc *proc)
 #endif
 
 
-/*########################GESTIONE PROCESSO##########################
+/*
  * Create a proc structure.
  */
 
@@ -500,16 +442,6 @@ proc_remthread(struct thread *t)
 
 #if OPT_WAITPID
 
-/*
- * Attende la terminazione del processo figlio.
- *
- * Questa è la funzione usata dal kernel/menu:
- *
- *     exit_code = proc_wait(proc);
- *
- * Quando il figlio chiama sys__exit(), fa V(proc->p_sem),
- * quindi questa P si sblocca.
- */
 int
 proc_wait(struct proc *proc)
 {

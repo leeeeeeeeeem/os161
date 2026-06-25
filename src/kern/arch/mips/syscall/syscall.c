@@ -91,7 +91,6 @@ syscall(struct trapframe *tf)
 	KASSERT(curthread->t_iplhigh_count == 0);
 
 	callno = tf->tf_v0;
- // AGGIUNGI QUI
 
 	/*
 	 * Initialize retval to 0. Many of the system calls don't
@@ -201,25 +200,14 @@ enter_forked_process(struct trapframe *tf)
 
 	KASSERT(tf != NULL);
 
-	/*
-	 * Copio il trapframe sullo stack del figlio e libero quello allocato
-	 * con kmalloc dentro sys_fork.
-	 */
 	child_tf = *tf;
 	kfree(tf);
 
-	/*
-	 * Nel figlio fork() deve ritornare 0.
-	 */
 	child_tf.tf_v0 = 0;
 	child_tf.tf_a3 = 0;
 
-	/*
-	 * Salta l'istruzione syscall, altrimenti il figlio riesegue fork().
-	 */
     child_tf.tf_epc += 4;
 
-	/* Attiva l'address space del figlio, non basta as activate */
 	struct addrspace *as = curproc->p_addrspace;
 	KASSERT(as != NULL);
 	proc_setas(as);

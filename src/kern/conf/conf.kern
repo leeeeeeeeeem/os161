@@ -439,8 +439,6 @@ defoption netfs
 defoption ascii
 defoption binhex
 
-#####WAIT_PID#############
-
 defoption WAITPID
 
 ########################################
