@@ -4,7 +4,6 @@
 #include <vm.h>
 #include <coremap.h>
 
-// Temporary stubs for swap operations (to be implemented in Step 4)
 void swap_free(unsigned slot);
 int swap_read(vaddr_t kvaddr, unsigned slot);
 
@@ -124,7 +123,6 @@ struct pagedir* pagetable_copy(struct addrspace *old, struct addrspace *newas) {
 
 					new_pt->tables[i]->entries[j] = KVADDR_TO_PADDR(new_vaddr) | PTE_PRESENT;
 					
-					// Update coremap owner
 					uint32_t pframe = KVADDR_TO_PADDR(new_vaddr) / PAGE_SIZE;
 					coremap_set_owner(pframe, newas, (i << 22) | (j << 12));
 				}
@@ -144,7 +142,6 @@ struct pagedir* pagetable_copy(struct addrspace *old, struct addrspace *newas) {
 
 					new_pt->tables[i]->entries[j] = KVADDR_TO_PADDR(new_vaddr) | PTE_PRESENT;
 					
-					// Update coremap owner
 					uint32_t pframe = KVADDR_TO_PADDR(new_vaddr) / PAGE_SIZE;
 					coremap_set_owner(pframe, newas, (i << 22) | (j << 12));
 				}
