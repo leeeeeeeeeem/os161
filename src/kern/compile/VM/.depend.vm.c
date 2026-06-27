@@ -7,4 +7,4 @@ vm.o: ../../vm/vm.c ../../include/addrspace.h ../../include/types.h \
  opt-WAITPID.h ../../include/synch.h ../../include/spinlock.h \
  ../../include/hangman.h opt-hangman.h includelinks/machine/spinlock.h \
  ../../include/coremap.h ../../include/addrspace.h \
- includelinks/mips/tlb.h ../../include/spl.h
+ includelinks/mips/tlb.h ../../include/spl.h ../../include/swap.h

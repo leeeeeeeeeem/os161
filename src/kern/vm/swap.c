@@ -22,7 +22,7 @@ void swap_bootstrap(void) {
 	swap_lock = lock_create("swap_lock");
 	KASSERT(swap_lock != NULL);
 
-	err = vfs_swapon("ldh1", &swap_vnode);
+	err = vfs_swapon("lhd1", &swap_vnode);
 	if (err) {
 		panic("Failed to open swap disk\n");
 	}

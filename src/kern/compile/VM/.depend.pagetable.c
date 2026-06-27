@@ -5,4 +5,4 @@ pagetable.o: ../../vm/pagetable.c ../../include/pagetable.h \
  ../../include/kern/errno.h ../../include/addrspace.h \
  ../../include/types.h ../../include/lib.h ../../include/vm.h \
  includelinks/machine/vm.h opt-dumbvm.h ../../include/coremap.h \
- ../../include/addrspace.h
+ ../../include/addrspace.h ../../include/swap.h

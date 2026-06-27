@@ -1,5 +1,5 @@
-#ifndef _SWAP_H_
-#define _SWAP_H_
+#ifndef SWAP_H
+#define SWAP_H
 
 #include <types.h>
 

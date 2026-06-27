@@ -3,19 +3,7 @@
 #include <addrspace.h>
 #include <vm.h>
 #include <coremap.h>
-
-void swap_free(unsigned slot);
-int swap_read(vaddr_t kvaddr, unsigned slot);
-
-void swap_free(unsigned slot) {
-	(void)slot;
-}
-
-int swap_read(vaddr_t kvaddr, unsigned slot) {
-	(void)kvaddr;
-	(void)slot;
-	return 0;
-}
+#include <swap.h>
 
 struct pagedir* pagetable_create(void) {
 	struct pagedir* dir = kmalloc(sizeof(struct pagedir));
@@ -41,9 +29,10 @@ struct pagetable* pagetable_create_lv2(void) {
 	return pt;
 }
 
-paddr_t pagetable_translate(struct pagedir* pt, vaddr_t vaddr) {
+paddr_t pagetable_translate(struct addrspace* as, vaddr_t vaddr) {
 	uint32_t dir_idx = GET_DIR_INDEX(vaddr);
 	uint32_t pt_idx = GET_PT_INDEX(vaddr);
+	struct pagedir* pt = as->pagetable;
 
 	struct pagetable* pt_lv2 = pt->tables[dir_idx];
 	if (pt_lv2 == NULL) {
@@ -60,8 +49,26 @@ paddr_t pagetable_translate(struct pagedir* pt, vaddr_t vaddr) {
 			return 0;
 
 		bzero((void*) tmp_vaddr, PAGE_SIZE);
-		entry = KVADDR_TO_PADDR(tmp_vaddr);
+		entry = KVADDR_TO_PADDR(tmp_vaddr) | PTE_PRESENT;
 		pt_lv2->entries[pt_idx] = entry;
+		coremap_set_owner(entry >> 12, as, vaddr);
+	}
+	else if (entry & PTE_SWAPPED) {
+		vaddr_t tmp_vaddr = alloc_kpages(1);
+		if (tmp_vaddr == 0)
+			return 0;
+
+		unsigned int swap_slot = entry >> 12;
+		int err = swap_read(tmp_vaddr, swap_slot);
+		if (err) {
+			free_kpages(tmp_vaddr);
+			return 0;
+		}
+		swap_free(swap_slot);
+
+		entry = KVADDR_TO_PADDR(tmp_vaddr) | PTE_PRESENT;
+		pt_lv2->entries[pt_idx] = entry;
+		coremap_set_owner(entry >> 12, as, vaddr);
 	}
 	
 	return entry;

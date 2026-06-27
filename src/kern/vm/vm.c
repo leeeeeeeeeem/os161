@@ -9,12 +9,15 @@
 #include <coremap.h>
 #include <mips/tlb.h>
 #include <spl.h>
+#include <swap.h>
+
 
 bool vm_ready = false;
 struct spinlock mem_lock = SPINLOCK_INITIALIZER;
 
 void vm_bootstrap(void) {
 	coremap_init();
+	swap_bootstrap();
 	vm_ready = true;
 }
 
@@ -115,7 +118,7 @@ int vm_fault(int faulttype, vaddr_t faultaddress) {
 	}
 
 translate:
-	paddr = pagetable_translate(as->pagetable, faultaddress);
+	paddr = pagetable_translate(as, faultaddress);
 	if (paddr == 0)
 		return ENOMEM;
 
