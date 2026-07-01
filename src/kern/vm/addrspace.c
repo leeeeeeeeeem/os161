@@ -30,6 +30,7 @@
 #include "pagetable.h"
 #include "spl.h"
 #include <types.h>
+#include <vmstats.h>
 #include <kern/errno.h>
 #include <lib.h>
 #include <addrspace.h>
@@ -38,6 +39,8 @@
 #include <mips/tlb.h>
 
 #define USER_STACK_SIZE 16
+
+static struct addrspace *active_as = NULL;
 
 struct addrspace *as_create(void) {
 	struct addrspace *as;
@@ -133,19 +136,21 @@ void as_activate(void) {
 
 	int spl = splhigh();
 
-	for (int i = 0; i < NUM_TLB; i++) {
-		tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
+	if (as != active_as) {
+		for (int i = 0; i < NUM_TLB; i++) {
+			tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
+		}
+		active_as = as;
+		vm_record_stat(STAT_TLB_INVALIDATION);
 	}
 
 	splx(spl);
 }
 
 void as_deactivate(void) {
-	/*
-	 * Write this. For many designs it won't need to actually do
-	 * anything. See proc.c for an explanation of why it (might)
-	 * be needed.
-	 */
+	int spl = splhigh();
+	active_as = NULL;
+	splx(spl);
 }
 
 /*

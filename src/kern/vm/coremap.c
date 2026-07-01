@@ -1,6 +1,7 @@
 #include "swap.h"
 #include "types.h"
 #include "spinlock.h"
+#include <vmstats.h>
 #include "lib.h"
 #include "vm.h"
 #include "coremap.h"
@@ -172,6 +173,7 @@ paddr_t coremap_evict_one(void) {
 	int index = tlb_probe(vaddr & PAGE_FRAME, 0);
 	if (index >= 0) {
 		tlb_write(TLBHI_INVALID(index), TLBLO_INVALID(), index);
+		vm_record_stat(STAT_TLB_INVALIDATION);
 	}
 	splx(spl);
 
@@ -181,5 +183,6 @@ paddr_t coremap_evict_one(void) {
 	coremap[selected_frame].counter = 0;
 	coremap[selected_frame].chunk_size = 0;
 
+	vm_record_stat(STAT_PAGE_REPLACEMENT);
 	return selected_frame << 12;
 }

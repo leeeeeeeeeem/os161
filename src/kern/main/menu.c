@@ -47,6 +47,7 @@
 #include "opt-net.h"
 #include "opt-ascii.h"
 #include "opt-binhex.h"
+#include <vmstats.h>
 
 #if OPT_ASCII
 #include "ascii.h"
@@ -399,6 +400,36 @@ static int cmd_binhex(int nargs, char** args){
 	return 0;
 }
 #endif
+
+
+static int cmd_vmstats(int nargs, char** args){
+	if (nargs != 2){
+		kprintf("Usage: vmstats <flag> (--start, --stop, --print or --reset)\n");
+		return 0;
+	}
+	
+	char* flag = args[1];
+	
+	if (strcmp(flag, "--start") == 0) {
+		vm_start_recording_stats();
+		kprintf("started recording VM statistics\n");
+	}
+	else if (strcmp(flag, "--stop") == 0) {
+		vm_stop_recording_stats();
+		kprintf("stopped recording VM statistics\n");
+	}
+	else if (strcmp(flag, "--print") == 0) {
+		vm_print_stats();
+	}
+	else if (strcmp(flag, "--reset") == 0) {
+		vm_reset_stats();
+	}
+	else {
+		kprintf("Usage: vmstats <flag> (--start, --stop, --print or --reset)\n");
+	}
+
+	return 0;
+}
 
 /*
  * Command for starting the system shell.
@@ -908,6 +939,8 @@ static struct {
 	{ "kh",         cmd_kheapstats },
 	{ "khgen",      cmd_kheapgeneration },
 	{ "khdump",     cmd_kheapdump },
+
+	{ "vmstats", cmd_vmstats },
 
 	/* base system tests */
 	{ "at",		arraytest },

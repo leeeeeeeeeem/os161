@@ -1,6 +1,7 @@
 #include <types.h>
 #include <kern/errno.h>
 #include <lib.h>
+#include <vmstats.h>
 #include <vfs.h>
 #include <vnode.h>
 #include <stat.h>
@@ -72,6 +73,7 @@ int swap_write(vaddr_t kvaddr, unsigned slot) {
 		lock_release(swap_lock);
 		return ENOSPC;
 	}
+	vm_record_stat(STAT_SWAP_WRITE);
 	lock_release(swap_lock);
 	return 0;
 }
@@ -95,6 +97,7 @@ int swap_read(vaddr_t kvaddr, unsigned slot) {
 		lock_release(swap_lock);
 		return EIO;
 	}
+	vm_record_stat(STAT_SWAP_READ);
 	lock_release(swap_lock);
 	return 0;
 }

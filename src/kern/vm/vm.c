@@ -1,6 +1,7 @@
 #include <addrspace.h>
 #include <kern/errno.h>
 #include <pagetable.h>
+#include <vmstats.h>
 #include <proc.h>
 #include <types.h>
 #include <lib.h>
@@ -57,6 +58,8 @@ void free_kpages(vaddr_t addr) {
 int vm_fault(int faulttype, vaddr_t faultaddress) {
 	struct addrspace* as = proc_getas();
 	paddr_t paddr;
+
+	vm_record_stat(STAT_TLB_FAULT);
 
 	if (as == NULL){
 		kprintf("FATAL EFAULT: type %d at address 0x%x\n", faulttype, faultaddress);
@@ -134,7 +137,22 @@ translate:
 	if (index >= 0) {
 		tlb_write(faultaddress & PAGE_FRAME, entrylo, index);
 	} else {
-		tlb_random(faultaddress & PAGE_FRAME, entrylo);
+		int free_index = -1;
+		uint32_t ehi, elo;
+		for (int i = 0; i < NUM_TLB; i++) {
+			tlb_read(&ehi, &elo, i);
+			if (!(elo & TLBLO_VALID)) {
+				free_index = i;
+				break;
+			}
+		}
+		if (free_index >= 0) {
+			tlb_write(faultaddress & PAGE_FRAME, entrylo, free_index);
+			vm_record_stat(STAT_TLB_FAULT_FREE);
+		} else {
+			tlb_random(faultaddress & PAGE_FRAME, entrylo);
+			vm_record_stat(STAT_TLB_FAULT_REPLACE);
+		}
 	}
 	splx(spl);
 

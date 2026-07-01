@@ -14,4 +14,5 @@ menu.o: ../../main/menu.c ../../include/types.h \
  ../../include/synch.h ../../include/vfs.h ../../include/sfs.h \
  ../../include/fs.h ../../include/vnode.h ../../include/kern/sfs.h \
  ../../include/syscall.h ../../include/test.h opt-sfs.h opt-net.h \
- opt-ascii.h opt-binhex.h ../../include/ascii.h ../../include/binhex.h
+ opt-ascii.h opt-binhex.h ../../include/vmstats.h ../../include/ascii.h \
+ ../../include/binhex.h

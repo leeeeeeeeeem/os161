@@ -90,6 +90,7 @@ SRCS+=$(KTOP)/vm/kmalloc.c
 SRCS+=$(KTOP)/vm/pagetable.c
 SRCS+=$(KTOP)/vm/swap.c
 SRCS+=$(KTOP)/vm/vm.c
+SRCS+=$(KTOP)/vm/vmstats.c
 SRCS.MACHINE.mips+=$(TOP)/common/gcc-millicode/adddi3.c
 SRCS.MACHINE.mips+=$(TOP)/common/gcc-millicode/anddi3.c
 SRCS.MACHINE.mips+=$(TOP)/common/gcc-millicode/ashldi3.c

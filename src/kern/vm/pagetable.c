@@ -4,6 +4,7 @@
 #include <vm.h>
 #include <coremap.h>
 #include <swap.h>
+#include <vmstats.h>
 
 struct pagedir* pagetable_create(void) {
 	struct pagedir* dir = kmalloc(sizeof(struct pagedir));
@@ -44,6 +45,7 @@ paddr_t pagetable_translate(struct addrspace* as, vaddr_t vaddr) {
 
 	paddr_t entry = pt_lv2->entries[pt_idx];
 	if (entry == 0) {
+		vm_record_stat(STAT_PAGE_FAULT);
 		vaddr_t tmp_vaddr = alloc_kpages(1);
 		if (tmp_vaddr == 0)
 			return 0;
@@ -54,6 +56,7 @@ paddr_t pagetable_translate(struct addrspace* as, vaddr_t vaddr) {
 		coremap_set_owner(entry >> 12, as, vaddr);
 	}
 	else if (entry & PTE_SWAPPED) {
+		vm_record_stat(STAT_PAGE_FAULT);
 		vaddr_t tmp_vaddr = alloc_kpages(1);
 		if (tmp_vaddr == 0)
 			return 0;
