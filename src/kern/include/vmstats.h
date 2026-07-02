@@ -3,14 +3,12 @@
 
 #include <types.h>
 
-#define STAT_TLB_FAULT           1
-#define STAT_TLB_FAULT_FREE      2
-#define STAT_TLB_FAULT_REPLACE   3
-#define STAT_TLB_INVALIDATION    4
-#define STAT_PAGE_FAULT          5
-#define STAT_SWAP_READ           6
-#define STAT_SWAP_WRITE          7
-#define STAT_PAGE_REPLACEMENT    8
+#define STAT_TLB_FAULT_FREE      1
+#define STAT_TLB_FAULT_REPLACE   2
+#define STAT_TLB_INVALIDATION    3
+#define STAT_PAGE_FAULT          4
+#define STAT_SWAP_READ           5
+#define STAT_SWAP_WRITE          6
 
 void vm_start_recording_stats(void);
 void vm_stop_recording_stats(void);

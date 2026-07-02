@@ -65,6 +65,7 @@ struct addrspace {
 	struct pagedir* pagetable;
 	vaddr_t heap_start;
 	vaddr_t heap_end;
+	bool is_copying;
 };
 
 // struct addrspace {

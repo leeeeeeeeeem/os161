@@ -404,7 +404,7 @@ static int cmd_binhex(int nargs, char** args){
 
 static int cmd_vmstats(int nargs, char** args){
 	if (nargs != 2){
-		kprintf("Usage: vmstats <flag> (--start, --stop, --print or --reset)\n");
+		kprintf("usage: vmstats <flag> (--start, --stop, --print or --reset)\n");
 		return 0;
 	}
 	
@@ -412,11 +412,9 @@ static int cmd_vmstats(int nargs, char** args){
 	
 	if (strcmp(flag, "--start") == 0) {
 		vm_start_recording_stats();
-		kprintf("started recording VM statistics\n");
 	}
 	else if (strcmp(flag, "--stop") == 0) {
 		vm_stop_recording_stats();
-		kprintf("stopped recording VM statistics\n");
 	}
 	else if (strcmp(flag, "--print") == 0) {
 		vm_print_stats();
@@ -425,7 +423,7 @@ static int cmd_vmstats(int nargs, char** args){
 		vm_reset_stats();
 	}
 	else {
-		kprintf("Usage: vmstats <flag> (--start, --stop, --print or --reset)\n");
+		kprintf("usage: vmstats <flag> (--start, --stop, --print or --reset)\n");
 	}
 
 	return 0;

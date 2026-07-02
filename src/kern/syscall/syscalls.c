@@ -68,6 +68,10 @@ int sys_read(int fd, userptr_t buf_ptr, size_t size, int32_t *retval){
 		for (i = 0; i < nbytes; i++) {
 			int ch = getch();
 			if (ch == -1 || ch == '\r' || ch == '\n') {
+				if (ch == '\r' || ch == '\n') {
+					kernel_buf[i] = '\n';
+					i++;
+				}
 				if (i > 0) {
 					result = copyout(kernel_buf, buf_ptr + nread, i);
 					if (result) {

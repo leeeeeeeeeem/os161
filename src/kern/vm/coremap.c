@@ -8,9 +8,11 @@
 #include "pagetable.h"
 #include "spl.h"
 #include "mips/tlb.h"
+#include "wchan.h"
 
 struct coremap_entry* coremap;
 uint32_t total_frames;
+struct wchan *eviction_wchan = NULL;
 
 extern struct spinlock mem_lock;
 
@@ -42,6 +44,9 @@ void coremap_init(void){
 			coremap[i].chunk_size = 0;
 		}
 	}
+
+	eviction_wchan = wchan_create("eviction");
+	KASSERT(eviction_wchan != NULL);
 }
 
 vaddr_t coremap_alloc(unsigned npages){
@@ -130,7 +135,7 @@ paddr_t coremap_evict_one(void) {
 	uint32_t selected_frame = 0;
 	bool found = false;
 	for (uint32_t i = 0; i < total_frames; i++) {
-		if (coremap[i].occupancy_state == IN_USE && coremap[i].owner != NULL) {
+		if (coremap[i].occupancy_state == IN_USE && coremap[i].owner != NULL && !coremap[i].owner->is_copying) {
 			if (coremap[i].counter < min_counter) {
 				min_counter = coremap[i].counter;
 				selected_frame = i;
@@ -153,6 +158,7 @@ paddr_t coremap_evict_one(void) {
 	if (err) {
 		spinlock_acquire(&mem_lock);
 		coremap[selected_frame].occupancy_state = IN_USE;
+		wchan_wakeall(eviction_wchan, &mem_lock);
 		return 0;
 	}
 
@@ -161,6 +167,7 @@ paddr_t coremap_evict_one(void) {
 		swap_free(swap_slot);
 		spinlock_acquire(&mem_lock);
 		coremap[selected_frame].occupancy_state = IN_USE;
+		wchan_wakeall(eviction_wchan, &mem_lock);
 		return 0;
 	}
 
@@ -183,6 +190,6 @@ paddr_t coremap_evict_one(void) {
 	coremap[selected_frame].counter = 0;
 	coremap[selected_frame].chunk_size = 0;
 
-	vm_record_stat(STAT_PAGE_REPLACEMENT);
+	wchan_wakeall(eviction_wchan, &mem_lock);
 	return selected_frame << 12;
 }

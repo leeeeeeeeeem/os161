@@ -37,6 +37,9 @@
 #include <vm.h>
 #include <proc.h>
 #include <mips/tlb.h>
+#include <thread.h>
+#include "coremap.h"
+#include "wchan.h"
 
 #define USER_STACK_SIZE 16
 
@@ -59,6 +62,7 @@ struct addrspace *as_create(void) {
 	}
 
 	as->heap_start = as->heap_end = 0;
+	as->is_copying = false;
 	
 	return as;
 }
@@ -75,18 +79,24 @@ int as_copy(struct addrspace *old, struct addrspace **ret) {
 	newas->stack_npages = old->stack_npages;
 	newas->heap_start = old->heap_start;
 	newas->heap_end = old->heap_end;
+	newas->regions = NULL;
+	newas->pagetable = NULL;
+	newas->is_copying = true;
+
+	old->is_copying = true;
 
 	newas->pagetable = pagetable_copy(old, newas);
 	if (newas->pagetable == NULL && old->pagetable != NULL) {
+		old->is_copying = false;
 		as_destroy(newas);
 		return ENOMEM;
 	}
-	newas->regions = NULL;
 
 	struct region* region = old->regions;
 	while(region != NULL) {
 		struct region* new_region = kmalloc(sizeof(struct region));
 		if (new_region == NULL){
+			old->is_copying = false;
 			as_destroy(newas);
 			return ENOMEM;
 		}
@@ -104,12 +114,14 @@ int as_copy(struct addrspace *old, struct addrspace **ret) {
 		region = region->next;
 	}
 
+	old->is_copying = false;
+	newas->is_copying = false;
+
 	*ret = newas;
 	return 0;
 }
 
 void as_destroy(struct addrspace *as) {
-
 	struct region* region = as->regions;
 	while(region != NULL) {
 		struct region* next = region->next;

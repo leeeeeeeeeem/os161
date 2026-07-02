@@ -5,6 +5,8 @@
 #include <coremap.h>
 #include <swap.h>
 #include <vmstats.h>
+#include <thread.h>
+#include "wchan.h"
 
 struct pagedir* pagetable_create(void) {
 	struct pagedir* dir = kmalloc(sizeof(struct pagedir));
@@ -79,6 +81,35 @@ paddr_t pagetable_translate(struct addrspace* as, vaddr_t vaddr) {
 
 void pagetable_destroy(struct pagedir *pt) {
 	struct pagetable* entry;
+	extern struct spinlock mem_lock;
+	extern struct coremap_entry* coremap;
+	extern uint32_t total_frames;
+	extern struct wchan *eviction_wchan;
+
+	if (pt == NULL)
+		return;
+
+	spinlock_acquire(&mem_lock);
+	bool has_fixed = true;
+	while (has_fixed) {
+		has_fixed = false;
+		for (uint32_t i = 0; i < total_frames; i++) {
+			if (coremap[i].owner != NULL && coremap[i].owner->pagetable == pt && coremap[i].occupancy_state == FIXED) {
+				has_fixed = true;
+				break;
+			}
+		}
+		if (has_fixed) {
+			wchan_sleep(eviction_wchan, &mem_lock);
+		}
+	}
+
+	for (uint32_t i = 0; i < total_frames; i++) {
+		if (coremap[i].owner != NULL && coremap[i].owner->pagetable == pt) {
+			coremap[i].owner = NULL;
+		}
+	}
+	spinlock_release(&mem_lock);
 
 	for (int i = 0; i < PT_SIZE; i++) {
 		entry = pt->tables[i];
@@ -103,6 +134,8 @@ struct pagedir* pagetable_copy(struct addrspace *old, struct addrspace *newas) {
 	struct pagedir* new_pt = pagetable_create();
 	if (new_pt == NULL)
 		return NULL;
+
+	newas->pagetable = new_pt;
 
 	struct pagetable* entry;
 	for (int i = 0; i < PT_SIZE; i++) {

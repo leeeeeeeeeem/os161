@@ -59,8 +59,6 @@ int vm_fault(int faulttype, vaddr_t faultaddress) {
 	struct addrspace* as = proc_getas();
 	paddr_t paddr;
 
-	vm_record_stat(STAT_TLB_FAULT);
-
 	if (as == NULL){
 		kprintf("FATAL EFAULT: type %d at address 0x%x\n", faulttype, faultaddress);
 		return EFAULT;
