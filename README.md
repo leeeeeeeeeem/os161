@@ -72,3 +72,69 @@ Le funzioni definite per la coremap sono:
 - `coremap_set_owner`: Associa un frame all'address space proprietario, registrando l'indirizzo virtuale utente associato e memorizzando il valore incrementale del contatore FIFO.
 
 - `coremap_evict_one`: Sceglie un frame utente con il contatore FIFO minore, imposta temporaneamente il suo stato a `FIXED` ed effettua lo swap-out su disco. Successivamente invalida l'entry nel TLB se presente, imposta il flag per dire che la pagina non è in RAM sulla pagetable del processo, libera il frame impostandolo a `FREE` e notifica i thread in attesa su `eviction_wchan`.
+
+### Interfaccia con il disco di Swap
+Abbiamo implementato un meccansimo di swap per quando la memoria principale si riempe, il disco utilizzato per questo è `lhd1`. All'interno del file `swap.c` definiamo il vnode del disco, una bitmap che indica se ogni pagina fisica del disco è occupata o meno e un lock che garantisce la mutua esclusione per tutte le operazioni. Per interfacciarci con il disco di swap utilizziamo le seguenti funzioni:
+
+- `swap_bootstrap`: Connette il disco chiamando `vfs_swapon`, ne ottiene la dimensione e inizializza la bitmap.
+
+- `swap_alloc`: Trova e riserva uno slot libero nella bitmap impostandolo a 1 sotto la protezione di `swap_lock`.
+
+- `swap_free`: Rilascia lo slot specificato nella bitmap impostandolo a 0.
+
+- `swap_write`: Effettua la scrittura di una pagina dalla RAM al disco, detenendo il lock.
+
+- `swap_read`: Effettua la lettura di una pagina dalla disco al RAM, sempre detenendo il lock.
+
+### Page Table
+Il cuore del nostro sistema di Memoria Virtuale sta nella Page Table, la quale è a 2 livelli e definita per ogni processo utente. Nell'address space di un processo c'è una page directory di primo livello, contenente 1024 puntatori a tabelle di secondo livello, inizialmente inizializzate a `NULL`. Al secondo livello ci sono le page table ognuna con 1024 entry di tipo `paddr_t`, mentre l'indice di ricerca è l'indirizzo virtuale utente. 
+L'entry della page table può essere:
+
+- **nulla**: in questo caso assume il valore di 0;
+- **nella RAM**: in questo caso l'entry corrisponde all'indirizzo del frame fisico (un multiplo di 4096 e quindi con i 12 bit inferiori a 0) nei bit più alti e la flag `PTE_PRESENT = 0x1` nei bit più bassi; 
+- **in swap**: in questo caso l'entry contiene nei 12 bit più alti il numero del blocco nel disco di swap nel quale è contenuta la pagina e la flag `PTE_SWAPPED = 0x2` nei bit più bassi.
+
+Le funzioni definite per la Page Table sono:
+
+- `pagetable_create`: Crea una page directory di primo livello, inizializzando tutte le 1024 entry a NULL.
+
+- `pagetable_create_lv2`: Si occupa di allocare dinamicamente una page table di secondo livello, che viene fatto on-demand, ovvero solo quando il processo indirizza una pagina che deve essere salvata in questa tabella. Inizializza tutte le 1024 entry a 0.
+
+- `pagetable_destroy`: Si occupa di dellocare la page table, ma prima aquisisce lo spinlock `mem_lock` (definito in `vm.c` e utilizzato per sincronizzare operazioni sulla VM). Successivamente controlla se ci sono frame appartenenti a questo processo che si trovano nello stato `FIXED` (stanno venendo swappate), nel caso ci siano si mette a dormire su `eviction_wchan` per evitare di deallocare pagine fisiche che stanno venendo scritte su disco. Al risveglio ripete la scanzione, una volta accertato che non ci siano più pagine fissate imposta `owner = NULL` a tutti i frame posseduti dal processo, dopo rilascia `mem_lock`. Poi scorre su ogni entry delle page table di secondo livello, deallocandole o in memoria con `free_kpages` oppure sul disco con `swap_free`. Infine libera le page table di secondo livello e poi la page directory.
+
+- `pagetable_copy`: Effettua una copia in profondità della pagetable dell'address space padre all'address space figlio. Alloca page table di primo e secondo livello e per ogni entry alloca una nuova pagina in memoria, effettua una copia con `memcpy` e chiama `coremap_set_owner` con l'address space del figlio. Nel caso l'entry non sia in memoria la legge dal disco di swap prima di inserirla.
+
+- `pagetable_get_entry`: Restituisce un puntatore a `paddr_t`, utilizzato per modificare entry nella page table quando una pagina viene spostata sul disco di swap ed è necessario impostare `PTE_SWAPPED` e scrivere lo swap slot.
+
+#### `pagetable_translate`
+Questa funzione è una delle più fondamentali per la nostra implenetazione, in quanto mette insieme le varie componenti di basso livello definite precedentemente, oltre al fatto che viene chiamata ogni volta che abbiamo un TLB miss. Si occupa di fare la "Page Table walk" e di effettuare traduzioni da indirizzi logici utente a indirizzi fisici, oltre a risolvere richieste di pagine on-demand.
+Effettua le seguenti operazioni:
+
+1. Prende in input un `vaddr_t` e da esso estrae indici per la page directory di primo livello e per la page table di secondo livello.  
+2. Controlla se la page table di 2 livello esiste e nel caso negativo la alloca.
+3. Preleva l'entry della pagina corrispondente all'indirizzo fornito, utilizzando indici di livello 1 e 2.
+4. Leggendo l'entry ci possono essere 3 casistiche diverse:
+    
+    - L'entry è presente in RAM:
+
+        5. In questo caso l'entry è diversa da 0 e `PTE_PRESENT` è settato, la funzione salta alla fine e restituisce l'indirizzo fisico registrato.
+
+    - L'entry è uguale a 0:
+
+        5. Il processo sta accedendo a questa pagina per la prima volta. Si alloca un frame della RAM, se è esaurita, questa chiamata porta all'eviction di altre pagine.
+        6. Azzera la memoria fisica allocata chiamando `bzero`.
+        7. Mappa l'indirizzo fisico combinandolo con la flag `PTE_PRESENT` e lo scrive nella pagetable.
+        8. Associa il frame all'address space nella coremap chiamando `coremap_set_owner`.
+        9. Restituisce l'indirizzo fisico appena allocato.
+
+    - L'entry è presente sul disco (swap-in): 
+
+        5. Significa che flag `PTE_SWAPPED` è settato, viene allocata una nuova pagina con `alloc_kpages`.
+        6. Viene estratto l'indice dello slot di swap dai bit più alti
+        7. Viene letta la pagina dal disco con `swap_read` e i dati vengono scritti nella pagina appena allocata.
+        8. Viene liberato lo slot sulla partizione di swap bitmap con `swap_free`.
+        9. Aggiorna l'entry impostando l'indirizzo del nuovo frame fisico e settando il flag `PTE_PRESENT`
+        10. Registra l'addrspace nella coremap con `coremap_set_owner`.
+        11. Restituisce il nuovo indirizzo fisico.
+
+### Address space
