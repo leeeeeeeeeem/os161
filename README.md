@@ -243,30 +243,40 @@ Abbiamo eseguito tutti i test lato utente nella cartella `testbin/` relativi al 
 | palin | 512K | 15.321 | 5 | 0 | 1 | 5 | 0 | 0 |
 | palin | 1M | 15.321 | 5 | 0 | 1 | 5 | 0 | 0 |
 | palin | 2M | 15.295 | 5 | 0 | 1 | 5 | 0 | 0 |
-| parallelVM | 512K | 523.375 | 16858 | 0 | 32098 | 5242 | 5070 | 5211 |
+| parallelVM* | 512K | 523.375 | 16858 | 0 | 32098 | 5242 | 5070 | 5211 |
 | parallelVM | 1M | 349.415 | 18806 | 0 | 21821 | 3494 | 3156 | 3325 |
 | parallelVM | 2M | 12.830 | 8615 | 0 | 3095 | 346 | 5 | 16 |
 | sort | 512K | 160.582 | 1354 | 561 | 1291 | 1756 | 1463 | 1683 |
 | sort | 1M | 57.310 | 206 | 1728 | 143 | 814 | 521 | 614 |
 | sort | 2M | 3.538 | 64 | 1845 | 1 | 293 | 0 | 0 |
 
-### Analisi e Valutazione delle Prestazioni
+*parallelVM con una configurazione di 512K riesce a forkare solamente 13/24 processi e i valori riportati riflettono questo, questo fenomeno è spiegato meglio sotto.
 
-#### Fenomeno del Thrashing e test strided (ctest e huge)
-Il test ctest evidenza la vulnerabilità dell'algoritmo di rimpiazzamento FIFO globale in presenza di accessi ciclici a un'area di memoria più grande della RAM fisica disponibile.
-- Con 2MB di RAM, l'intero array da 1MB e il codice del processo risiedono in memoria contemporaneamente. Non si verificano operazioni di swap e l'esecuzione richiede soltanto 13 secondi.
-- Con 1MB e 512KB di RAM, lo spazio fisico è inferiore alla dimensione dell'array più il kernel. L'accesso strided ciclico del test comporta che ad ogni iterazione la pagina virtuale richiesta sia proprio quella sfrattata più di recente. Si innesca una condizione di thrashing continuo in cui quasi ogni accesso in memoria solleva un page fault che richiede la scrittura del frame vittima su swap e la lettura del frame richiesto dal disco di swap. Il tempo complessivo di esecuzione sale a oltre 11,000 secondi.
-Il test huge mostra una situazione analoga, ma poiché la dimensione totale dell'array è di 8MB, la memoria fisica di 2MB non è comunque sufficiente per contenere i dati del processo, portando ad un tempo di esecuzione simile in tutte e tre le configurazioni a causa del thrashing inevitabile indotto dalla dimensione dei dati.
+### Analisi e delle prestazioni
 
-#### Località spaziale in Quicksort (sort)
-Il test sort ordina un array da 576KB appoggiandosi ad un array temporaneo delle stesse dimensioni (per un totale di 1.125MB).
-- Con 2MB di RAM l'intero set di dati risiede stabilmente in memoria (0 operazioni di swap).
-- Riducendo la memoria fisica a 1MB, si osserva un aumento contenuto delle letture e scritture da swap (521 letture, 614 scritture). L'algoritmo quicksort opera dividendo ricorsivamente l'array in partizioni. Non appena la dimensione delle sotto-partizioni scende al di sotto della RAM fisica disponibile al processo, l'ordinamento in loco avviene senza generare ulteriori page fault, ordinando localmente e riducendo l'overhead di I/O rispetto ad una scansione lineare globale.
-- Riducendo ulteriormente la memoria a 512KB, la soglia a cui le partizioni risiedono completamente in RAM si abbassa drasticamente, obbligando il sistema a ricorrere molto più frequentemente allo swap (1,463 letture) e triplicando il tempo di esecuzione (da 57 a 160 secondi).
+#### Thrashing per ctest e huge
+Il test ctest motra la vulnerabilità dell'algoritmo di rimpiazzamento FIFO. Questo è un test che crea un array da 1MB e successivamente accede all'array in maniera spezzata, accedendo a elementi con una distanza tra i loro indici pari a `stride`, che di default vale 477. Ogni salto equivale a 477 * 4 byte = 1908 byte (circa mezza pagina), questo rimuove completamente il principio della località spaziale.
+Se la RAM a disposizione è minore a 1MB, ovvero come nelle configurazioni con 512KB o anche quella da 1MB visto che parte della RAM è occupata dal kernel, succede che:
 
-#### Allocazione stack e limiti di memoria fisica (parallelVM e forktest)
-Il test parallelVM crea 24 processi figli paralleli, ciascuno dei quali esegue moltiplicazioni di matrici.
-- Nella configurazione a 512KB, 11 sottoprocessi falliscono con errore di out-of-memory. Ciascun processo richiede l'allocazione di una pagina non scambiabile per lo stack del kernel. Sotto forte pressione di memoria, la coremap esaurisce i frame fisici allocabili forzando il fallimento della chiamata fork.
-- Con 1MB e 2MB di RAM, lo spazio fisico è sufficiente per ospitare i blocchi di controllo e i descrittori di tutti i processi. Con 2MB, il sistema sperimenta un numero irrilevante di swap-out (16 scritture, 5 letture) e completa il calcolo in soli 12.8 secondi.
-- Il test forktest sotto 512KB presenta un numero di swap read (34) maggiore dei page fault (28). Questo accade perché `pagetable_copy` legge dallo swap del padre e popola la pagina del figlio chiamando direttamente `swap_read`, evitando il sollevamento dell'eccezione hardware gestita da `vm_fault` che incrementerebbe il contatore di page fault.
+- L'intero array non può risiedere totalmente nella RAM, parti di esso verranno allocate sul disco di swap.
+- Ad ogni salto, il programma accede molto frequentemente a una pagina diversa che non si trova in RAM. 
+- Questo porta a un continuo page fault, il kernel deve liberare un frame fisico (facendo swap-out) per potere caricare una pagina presente sul disco (swap-in).
+- Con un algoritmo di rimpiazzamento FIFO, la pagina richiesta a ogni iterazione finisce per essere proprio quella sfrattata più di recente.
+- Si verifica quindi il fenomeno del thrashing, ovvero il kernel passa tutto il tempo a eseguire I/O sul disco di swap invece che eseguire il codice, questo porta il tempo di esecuzione a oltre 3 ore.
 
+Invece per la configurazione di 2MB di RAM, l'intero array riesce a essere memorizzato in memoria e quindi il disco di swap non viene utilizzato e non si verifica il thrashing, riducendo enormemente il tempo d'esecuzione.
+
+Il test huge mostra una situazione analoga, ma visto che la dimensione totale dell'array è di 8MB, la memoria fisica di 2MB non è comunque abbastanza per contenere tutti i dati, portando a un tempo di esecuzione simile in tutte e tre le configurazioni, visto che vanno tutte in thrashing. Il tempo totale è comunque minore in quanto questo test effettua un numero di accessi minore di ctest.
+
+#### Località spaziale in sort
+Il test sort ordina un array da 576KB appoggiandosi ad un array temporaneo delle stesse dimensioni, con un totale di oltre 1MB. Osserviamo che:
+
+- Con 2MB di RAM, tutti i dati riescono a essere memorizzati in memoria, questo viene riflesso nelle scritture e letture sul disco di swap pari a 0.
+- Riducendo la RAM a 1MB, si osserva un aumento delle letture e scritture da swap. L'algoritmo quicksort divide ricorsivamente l'array in partizioni. Non appena la dimensione delle sotto partizioni diventa minore della RAM fisica disponibile, l'ordinamento può avvenire senza ulteriori page fault, ordinando, riducento il numero di operazioni di I/O. Questo è un caso in cui vale l'assunzione della località spaziale
+- Riducendo la memoria a 512KB, la soglia a cui le partizioni risiedono in RAM si abbassa, obbligando il sistema ad utilizzare più frequentemente lo swap e quindi triplicando il tempo di esecuzione.
+
+#### Limiti della memoria kernel in parallelVM
+Il test parallelVM crea 24 processi figli paralleli, ciascuno dei quali esegue moltiplicazioni di matrici. Si osserva che:
+
+- Nella configurazione con 512KB di RAM, 11 sottoprocessi falliscono con errore out of memory. Questo è perchè ciascun processo richiede l'allocazione di una pagina per lo stack del kernel, essendo memoria kernel questa pagina non può essere rimpiazzata e scritta sul disco di swap. Per questo se la memoria fisica non è sufficiente, la coremap non riesce ad allocare altri frame e forza la fork a ritornare un errore.
+- Con 1MB e 2MB di RAM invece, lo spazio fisico è abbastanza per tutta la memoria kernel necessaria, lasciandoci verificare che la nostra memoria virtuale funziona anche in un ambiente concorrente. Per 1MB di RAM, è necessario appoggiarci maggiormente alla partizione di swap per salvare le matrici dei vari processi, mentre per 2MB quasi tutto è contenuto in RAM, portando a un numero trascurabile di accessi allo swap.
