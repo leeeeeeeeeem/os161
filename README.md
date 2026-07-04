@@ -3,7 +3,7 @@
 - Corso: Programmazione di Sistema
 - Docente: Sarah Azimi
 - Progetto: OS161 B
-- Studenti: Greco Eleonora s354761, Jafrancesco Chiara s355023, Lemerle Stefano s353334
+- Studenti: G42 - Greco Eleonora s354761, Jafrancesco Chiara s355023, Lemerle Stefano Thomas s353334
 
 ## Esecuzione programmi utente
 Per poter eseguire i test sulla VM, è necessario poter eseguire i programmi utente oltre ai test kernel, per fare questo abbiamo modificato il file `runprogram.c`, contenente la funzione omonima. Abbiamo implementato un supporto per la gestione del passaggio di argomenti dal command line (`argc` e `argv`) al programma utente da parte del kernel, prima del passaggio a user mode. Per fare questo la funzione:
@@ -138,3 +138,70 @@ Effettua le seguenti operazioni:
         11. Restituisce il nuovo indirizzo fisico.
 
 ### Address space
+Ogni processo utente possiete un suo address space, noi lo abbiamo implementato inserendo i seguenti campi all'interno di `struct addrspace`:
+
+- `regions` : Puntatore alla testa della lista concatenata di `struct region`. Questo ci permette di gestire un numero
+  indefinito di regioni, superando il limite di dumbvm. `struct region` contiene i seguenti campi:
+    - `vaddr`: L'indirizzo virtuale di partenza della regione.
+    - `npages`: La dimensione della regione espressa in numero di pagine.
+    - `readable`,  `writeable`, `executable`: Flag booleani che definiscono i permessi di lettura, scrittura ed esecuzione per la regione.
+    - `writeable_backup`: serve per disabilitare temporaneamente la protezione in scrittura delle regioni di memoria durante la fase di caricamento dell'eseguibile, ripristinando poi i permessi corretti prima dell'esecuzione del programma.
+- `stack_base`: L'indirizzo di base dello stack utente.
+- `stack_npages`: La dimensione massima consentita per lo stack (impostata a 16 pagine).
+- `pagetable`: Puntatore alla page directory di primo livello.
+- `heap_start`: L'indirizzo virtuale di partenza dell'heap.
+- `heap_end`: Il limite superiore corrente dell'heap (che si estende dinamicamente con chiamate a `sys_sbrk`).
+- `is_copying`: Un flag booleano di sincronizzazione. Quando è `true` (durante la un operazione di `as_copy`), `coremap_evict_one` non selezionerà come vittima di eviction nessun pagina appartenente a questo address space.
+ 
+Le funzioni definite sono:
+
+- `as_create`: Alloca e inizializza un nuovo address space, impostando la lista delle regioni a `NULL`, allocando la page table e inizializzando gli altri campi.
+
+- `as_destroy`: Dealloca un address space, liberando prima le regioni nella linked list, poi la page table e infine la `struct addrspace` in se.
+
+- `as_copy`: Crea una copia identica dell'address space durante la fork. Alloca un nuovo address space, imposta il flag `is_copying` a `true` su sia padre che figlio. Poi copia i limiti dell'heap e dello stack e duplica la pagetable chiamando `pagetable_copy`. Poi scorre la lista delle regioni del padre e alloca ogni regione nella lista del figlio. Infine rimette `is_copying = false` e ritorna il nuovo address space.
+
+- `as_activate`: Carica e attiva l'address space del processo attuale, di base si occupa di fare un flush del TLB durante il cambio di contesto tra due address space diversi. Per fare in modo che non si invalidi tutto il TLB se stiamo solo cambiando contesto temporaneamente ma non cambiando address space (la casistica principale in cui succede questo è il context switch per I/O sul disco di swap), introduciamo la variabile globale `active_as`. Questa funzione esegue il flush completo del TLB solamente se l'address space che si vuole attivare è diverso da `activa_as`, il quale viene aggiornato alla fine della funzione. Tutto questo viene fatto con le interruzioni disabilitate.
+
+- `as_deactivate`: Disattiva l'address space del processo attuale e imposta la variabile globale `active_as = NULL`, sempre con interrupt disabilitate.
+
+- `as_define_region`: Definisce e registra una nuova regione logica (es. codice o dati) all'interno dell'address space, allocando un nuovo `struct region` e aggiungendolo in coda alla linked list `regions`, aggiorna anche la posizione dell'heap mettendola subito dopo il limite della regione appena creata.
+
+- `as_prepare_load`: Rende tutte le regioni temporaneamente scrivibili, per preparare il caricamento di un file ELF. Quando un nuovo processo viene chiamato, le sue regioni (tra cui per esempio .text che contiene il codice eseguibile e non è scrivibile) vengono definite insieme ai loro permessi con `as_define_region`. Successivamente il kernel dovrà leggere le varie regioni del file ELF e scriverle su una pagina in memoria, per fare questo necessita di permessi di scrittura su tutte le regioni. Per risolvere, questa funzione salva in `writeable_backup` i permessi originali e imposta tutte le regioni come `writeable`, dopo di questa verrà chiamata `load_elf`, che potrà quindi scrivere su tutte le regioni.
+
+- `as_complete_load`: Dopo che è stato chiamata `load_elf`, è necessario ripristinare i permessi originali prima di eseguire il programma, quest funzione si occupa di fare quello, riscrivendo su `writeable` il valore di `writeable_backup` per ogni regione.
+
+- `as_define_stack`: Configura i limiti dello stack utente, nella nostra implementazione lo stack inizio da `0x80000000` e ha come dimensione 16 pagine.
+
+### Gestore centrale della VM
+Il file `vm.c` unisce tutte le sottoparti appena definite, si occupa di sostituire completamente `dumbvm.c` e quindi definisce tutte le funzioni relative alla memoria che vengonono chiamate dal resto del kernel.
+Prima di tutto definisce un paio di variabili globali necessari per il funzionamento del sistema:
+
+- `vm_ready`: un booleano che memorizza se la VM è utilizzabile o meno, nelle prime fasi del bootstrap del kernel la coremap non è ancora allocata e quindi il sistema di VM non è ancora attivo;
+- `mem_lock`: uno spinlock che serve a serializzare tutte le operazioni sulla coremap e a proteggere le chiamate a `wchan_sleep` e `wchan_wakeall` su `eviction_wchan`.
+
+Le funzioni definite sono:
+
+- `vm_bootstrap`: Chiamata durante l'inizializzazione del kernel, chiama `coremap_init` per definire la coremap e `swap_init` per inizializzare la partizione di swap. Infine imposta `vm_ready` a `true` per abilitare l'utilizzo della VM.
+
+- `alloc_kpages`: Alloca un blocco continuo di `npages` per l'uso del kernel, se la VM non è pronta usa `ram_stealmem` e altrimenti chiama `coremap_alloc`, restituisce l'indirizzo virtuale della prima pagina allocata.
+
+- `free_kpages`: Libera la memoria precedentemente allocata da `alloc_kpages`, chiamando `coremap_free`.
+
+#### `vm_fault`
+Questa funzione è il gestore centrale della VM, si occupa di risolvere tutte le eccezioni scatenate dagli accessi in memoria. Viene chiamata ogni volta che si ha un TLB miss, ovvero quando un thread vuole scrivere su un'indirizzo virtuale la cui pagina non è presente nel TLB, viene anche chiamata se un thread cerca di scrivere a un indirizzo virtuale marcato come un indirizzo di sola scrittura nel TLB. Si occupa di risolvere queste eccezioni aggiornando il TLB o restituendo un errore. 
+Prende in input `faulttype` di tipo intero, che memorizza il tipo di fault e `faultaddress` che è il `vaddr_t` che ha scatenato l'eccezione. Svolge le seguenti operazioni:
+
+1. Preleva l'address space del processo corrente e ritorna `EFAULT` se è `NULL`.
+2. Controlla che `faultaddress` sia diverso da 0 e che `faulttype` sia un valore valido, altrimenti ritorna `EFAULT`.
+3. Scorre la linked list delle regioni dell'address space per controllare se `faultaddress` è contenuto in uno di esse, se si controlla se il tipo di permessi definiti dalla regione e l'operazione descritta da `faulttype` sono compatibili, se non lo sono ritorna `EFAULT`, altrimenti salta a 6.
+4. Controlla se l'indirizzo rientra nell'heap e nello stack, se si salta a 6.
+5. Se arriva quì significa che l'indirizzo non è ne nello stack, ne nell'heap ne in nessuna regione definita dall'addrspace e quindi è un accesso illegale, restituisce `EFAULT`.
+6. Chiama `pagetable_translate`, che ritorna il `paddr` dove è presente l'indirizzo virtuale.
+7. Disabilita le interrupt e costruisce il valore da inserire nel TLB (indirizzo di pagina virtuale nei primi 32 bit e indirizzo di frame nei 32 bit più bassi).
+8. Cerca con `tlb_probe` se nel TLB esiste già una voce per la pagina virtuale che ha generato il fault (come nel caso del fault per cui la pagina era presente ma non scrivibile).
+9. Altrimenti cerca se il TLB contiene uno slot vuoto o invalido, se si ci scrive l'entry con `tlb_write`.
+10. Altrimenti sostituisce un entry valido nel TLB con `tlb_random`.
+11. Infine riabilita gli interrupt e ritorna 0 per dire che l'operazione è andata a buon fine.
+
+## Statistiche e benchmark
