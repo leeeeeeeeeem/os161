@@ -34,7 +34,6 @@ All'interno di `proc.c` abbiamo aggiunto una Process Table: una struttura dati g
 - attendere la terminazione di un processo figlio tramite il suo PID e leggerne l'exit code (`proc_wait`);
 - prelevare un processo dato il PID e viceversa (`proc_search_pid` e `proc_getpid`).
 
----
 ### System calls
 Ci siamo basati sull'architettura appena defita e abbiamo implementato alcune syscall necessarie:
 
@@ -74,7 +73,6 @@ Le funzioni definite per la coremap sono:
 
 - `coremap_evict_one`: Sceglie un frame utente con il contatore FIFO minore, imposta temporaneamente il suo stato a `FIXED` ed effettua lo swap-out su disco. Successivamente invalida l'entry nel TLB se presente, imposta il flag per dire che la pagina non è in RAM sulla pagetable del processo, libera il frame impostandolo a `FREE` e notifica i thread in attesa su `eviction_wchan`.
 
----
 ### Interfaccia con il disco di Swap
 Abbiamo implementato un meccansimo di swap per quando la memoria principale si riempe, il disco utilizzato per questo è `lhd1`. All'interno del file `swap.c` definiamo il vnode del disco, una bitmap che indica se ogni pagina fisica del disco è occupata o meno e un lock che garantisce la mutua esclusione per tutte le operazioni. Per interfacciarci con il disco di swap utilizziamo le seguenti funzioni:
 
@@ -88,7 +86,6 @@ Abbiamo implementato un meccansimo di swap per quando la memoria principale si r
 
 - `swap_read`: Effettua la lettura di una pagina dalla disco al RAM, sempre detenendo il lock.
 
----
 ### Page Table
 Il cuore del nostro sistema di Memoria Virtuale sta nella Page Table, la quale è a 2 livelli e definita per ogni processo utente. Nell'address space di un processo c'è una page directory di primo livello, contenente 1024 puntatori a tabelle di secondo livello, inizialmente inizializzate a `NULL`. Al secondo livello ci sono le page table ognuna con 1024 entry di tipo `paddr_t`, mentre l'indice di ricerca è l'indirizzo virtuale utente. 
 L'entry della page table può essere:
@@ -113,28 +110,27 @@ Le funzioni definite per la Page Table sono:
 Questa funzione è una delle più fondamentali per la nostra implenetazione, in quanto mette insieme le varie componenti di basso livello definite precedentemente, oltre al fatto che viene chiamata ogni volta che abbiamo un TLB miss. Si occupa di fare la "Page Table walk" e di effettuare traduzioni da indirizzi logici utente a indirizzi fisici, oltre a risolvere richieste di pagine on-demand.
 Effettua le seguenti operazioni:
 
-**1.** Prende in input un `vaddr_t` e da esso estrae indici per la page directory di primo livello e per la page table di secondo livello.  
-**2.** Controlla se la page table di 2 livello esiste e nel caso negativo la alloca.
-**3.** Preleva l'entry della pagina corrispondente all'indirizzo fornito, utilizzando indici di livello 1 e 2.
-**4.** Leggendo l'entry ci possono essere 3 casistiche diverse:
+1. Prende in input un `vaddr_t` e da esso estrae indici per la page directory di primo livello e per la page table di secondo livello.  
+2. Controlla se la page table di 2 livello esiste e nel caso negativo la alloca.
+3. Preleva l'entry della pagina corrispondente all'indirizzo fornito, utilizzando indici di livello 1 e 2.
+4. Leggendo l'entry ci possono essere 3 casistiche diverse:
     - L'entry è presente in RAM: <br>
-        **5.** In questo caso l'entry è diversa da 0 e `PTE_PRESENT` è settato, la funzione salta alla fine e restituisce l'indirizzo fisico registrato. <br>
+        5. In questo caso l'entry è diversa da 0 e `PTE_PRESENT` è settato, la funzione salta alla fine e restituisce l'indirizzo fisico registrato. <br>
     - L'entry è uguale a 0: <br>
-        **5.** Il processo sta accedendo a questa pagina per la prima volta. Si alloca un frame della RAM, se è esaurita, questa chiamata porta all'eviction di altre pagine. <br>
-        **6.** Azzera la memoria fisica allocata chiamando `bzero`. <br>
-        **7.** Mappa l'indirizzo fisico combinandolo con la flag `PTE_PRESENT` e lo scrive nella pagetable. <br>
-        **8.** Associa il frame all'address space nella coremap chiamando `coremap_set_owner`. <br>
-        **9.** Restituisce l'indirizzo fisico appena allocato. <br>
+        5. Il processo sta accedendo a questa pagina per la prima volta. Si alloca un frame della RAM, se è esaurita, questa chiamata porta all'eviction di altre pagine. <br>
+        6. Azzera la memoria fisica allocata chiamando `bzero`. <br>
+        7. Mappa l'indirizzo fisico combinandolo con la flag `PTE_PRESENT` e lo scrive nella pagetable. <br>
+        8. Associa il frame all'address space nella coremap chiamando `coremap_set_owner`. <br>
+        9. Restituisce l'indirizzo fisico appena allocato. <br>
     - L'entry è presente sul disco (swap-in): <br>
-        **5.** Significa che flag `PTE_SWAPPED` è settato, viene allocata una nuova pagina con `alloc_kpages`. <br>
-        **6.** Viene estratto l'indice dello slot di swap dai bit più alti. <br>
-        **7.** Viene letta la pagina dal disco con `swap_read` e i dati vengono scritti nella pagina appena allocata. <br>
-        **8.** Viene liberato lo slot sulla partizione di swap bitmap con `swap_free`. <br>
-        **9.** Aggiorna l'entry impostando l'indirizzo del nuovo frame fisico e settando il flag `PTE_PRESENT` <br>
-        **10.** Registra l'addrspace nella coremap con `coremap_set_owner`. <br>
-        **11.** Restituisce il nuovo indirizzo fisico.
+        5. Significa che flag `PTE_SWAPPED` è settato, viene allocata una nuova pagina con `alloc_kpages`. <br>
+        6. Viene estratto l'indice dello slot di swap dai bit più alti. <br>
+        7. Viene letta la pagina dal disco con `swap_read` e i dati vengono scritti nella pagina appena allocata. <br>
+        8. Viene liberato lo slot sulla partizione di swap bitmap con `swap_free`. <br>
+        9. Aggiorna l'entry impostando l'indirizzo del nuovo frame fisico e settando il flag `PTE_PRESENT` <br>
+        10. Registra l'addrspace nella coremap con `coremap_set_owner`. <br>
+        11. Restituisce il nuovo indirizzo fisico.
 
----
 ### Address space
 Ogni processo utente possiete un suo address space, noi lo abbiamo implementato inserendo i seguenti campi all'interno di `struct addrspace`:
 
@@ -171,7 +167,6 @@ Le funzioni definite sono:
 
 - `as_define_stack`: Configura i limiti dello stack utente, nella nostra implementazione lo stack inizio da `0x80000000` e ha come dimensione 16 pagine.
 
----
 ### Gestore centrale della VM
 Il file `vm.c` unisce tutte le sottoparti appena definite, si occupa di sostituire completamente `dumbvm.c` e quindi definisce tutte le funzioni relative alla memoria che vengonono chiamate dal resto del kernel.
 Prima di tutto definisce un paio di variabili globali necessari per il funzionamento del sistema:
@@ -191,17 +186,17 @@ Le funzioni definite sono:
 Questa funzione è il gestore centrale della VM, si occupa di risolvere tutte le eccezioni scatenate dagli accessi in memoria. Viene chiamata ogni volta che si ha un TLB miss, ovvero quando un thread vuole scrivere su un'indirizzo virtuale la cui pagina non è presente nel TLB, viene anche chiamata se un thread cerca di scrivere a un indirizzo virtuale marcato come un indirizzo di sola scrittura nel TLB. Si occupa di risolvere queste eccezioni aggiornando il TLB o restituendo un errore. 
 Prende in input `faulttype` di tipo intero, che memorizza il tipo di fault e `faultaddress` che è il `vaddr_t` che ha scatenato l'eccezione. Svolge le seguenti operazioni:
 
-**1.** Preleva l'address space del processo corrente e ritorna `EFAULT` se è `NULL`.
-**2.** Controlla che `faultaddress` sia diverso da 0 e che `faulttype` sia un valore valido, altrimenti ritorna `EFAULT`.
-**3.** Scorre la linked list delle regioni dell'address space per controllare se `faultaddress` è contenuto in uno di esse, se si controlla se il tipo di permessi definiti dalla regione e l'operazione descritta da `faulttype` sono compatibili, se non lo sono ritorna `EFAULT`, altrimenti salta a 6.
-**4.** Controlla se l'indirizzo rientra nell'heap e nello stack, se si salta a 6.
-**5.** Se arriva quì significa che l'indirizzo non è ne nello stack, ne nell'heap ne in nessuna regione definita dall'addrspace e quindi è un accesso illegale, restituisce `EFAULT`.
-**6.** Chiama `pagetable_translate`, che ritorna il `paddr` dove è presente l'indirizzo virtuale.
-**7.** Disabilita le interrupt e costruisce il valore da inserire nel TLB (indirizzo di pagina virtuale nei primi 32 bit e indirizzo di frame nei 32 bit più bassi).
-**8.** Cerca con `tlb_probe` se nel TLB esiste già una voce per la pagina virtuale che ha generato il fault (come nel caso del fault per cui la pagina era presente ma non scrivibile).
-**9.** Altrimenti cerca se il TLB contiene uno slot vuoto o invalido, se si ci scrive l'entry con `tlb_write`.
-**10.** Altrimenti sostituisce un entry valido nel TLB con `tlb_random`.
-**11.** Infine riabilita gli interrupt e ritorna 0 per dire che l'operazione è andata a buon fine.
+1. Preleva l'address space del processo corrente e ritorna `EFAULT` se è `NULL`.
+2. Controlla che `faultaddress` sia diverso da 0 e che `faulttype` sia un valore valido, altrimenti ritorna `EFAULT`.
+3. Scorre la linked list delle regioni dell'address space per controllare se `faultaddress` è contenuto in uno di esse, se si controlla se il tipo di permessi definiti dalla regione e l'operazione descritta da `faulttype` sono compatibili, se non lo sono ritorna `EFAULT`, altrimenti salta a 6.
+4. Controlla se l'indirizzo rientra nell'heap e nello stack, se si salta a 6.
+5. Se arriva quì significa che l'indirizzo non è ne nello stack, ne nell'heap ne in nessuna regione definita dall'addrspace e quindi è un accesso illegale, restituisce `EFAULT`.
+6. Chiama `pagetable_translate`, che ritorna il `paddr` dove è presente l'indirizzo virtuale.
+7. Disabilita le interrupt e costruisce il valore da inserire nel TLB (indirizzo di pagina virtuale nei primi 32 bit e indirizzo di frame nei 32 bit più bassi).
+8. Cerca con `tlb_probe` se nel TLB esiste già una voce per la pagina virtuale che ha generato il fault (come nel caso del fault per cui la pagina era presente ma non scrivibile).
+9. Altrimenti cerca se il TLB contiene uno slot vuoto o invalido, se si ci scrive l'entry con `tlb_write`.
+10. Altrimenti sostituisce un entry valido nel TLB con `tlb_random`.
+11. Infine riabilita gli interrupt e ritorna 0 per dire che l'operazione è andata a buon fine.
 
 ## Statistiche e benchmark
 
@@ -213,7 +208,7 @@ Per testare e valutare le prestazioni del sistema finito abbiamo introdotto un m
 - Invalidazioni del TLB;
 - Page Fault;
 - Letture dal disco di Swap (anche detto page in);
-- Scritture sul disco di Swap (anche detto page out);
+- Scritture sul disco di Swap (anche detto page out).
 
 Abbiamo definito funzioni per iniziare la registrazione delle statistiche, per fermare la registrazione, per resettare i contatori e per stampare le statistiche. Infine ovviamente abbiamo definito una funzione che aumenta il contatore, in base al tipo di statistica che si vuole registrare (`vm_record_stat`, le chiamate a questa funzione sono state inserite opportunamente all'interno dei vari file relativi alla nostra implementazione. 
 
@@ -226,52 +221,52 @@ Per fornire un'interfaccia a questo meccanismo, abbiamo introdotto a `menu.c` il
 - `--print`: stampa le statistiche raccolte;
 
 ### Risultati dei test
-Abbiamo eseguito tutti i test lato utente nella cartella `testbin/` relativi al funzionamento della VM, con configurazioni della RAM da 512K, 1M e 2M. I risultati sono riportati nella seguente tabella.
+Abbiamo eseguito tutti i test lato utente nella cartella `testbin/` relativi al funzionamento della VM, i risultati sono riportati nella seguente tabella.
 
-| Test | RAM size | TLB fault (free) | TLB fault (replace) | TLB invalidation | Page fault | Swap read (page in) | Swap write (page out) |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| ctest | 512K | 92867 | 32645 | 92804 | 124986 | 124726 | 124912 |
-| ctest | 1M | 9658 | 116309 | 9595 | 123935 | 123675 | 123735 |
-| ctest | 2M | 64 | 120321 | 1 | 260 | 0 | 0 |
-| forktest | 512K | 221 | 0 | 220 | 28 | 34 | 34 |
-| forktest | 1M | 212 | 0 | 72 | 5 | 0 | 0 |
-| forktest | 2M | 214 | 0 | 74 | 5 | 0 | 0 |
-| huge | 512K | 2896 | 706 | 2833 | 3582 | 3067 | 3511 |
-| huge | 1M | 359 | 3238 | 296 | 3423 | 2908 | 3225 |
-| huge | 2M | 170 | 3398 | 107 | 3155 | 2640 | 2702 |
-| matmult | 512K | 631 | 193 | 568 | 813 | 430 | 740 |
-| matmult | 1M | 106 | 695 | 43 | 772 | 389 | 572 |
-| matmult | 2M | 64 | 732 | 1 | 383 | 0 | 0 |
-| malloctest | 512K | 7 | 0 | 1 | 7 | 0 | 0 |
-| malloctest | 1M | 7 | 0 | 1 | 7 | 0 | 0 |
-| malloctest | 2M | 7 | 0 | 1 | 7 | 0 | 0 |
-| palin | 512K | 5 | 0 | 1 | 5 | 0 | 0 |
-| palin | 1M | 5 | 0 | 1 | 5 | 0 | 0 |
-| palin | 2M | 5 | 0 | 1 | 5 | 0 | 0 |
-| parallelVM | 512K | 16858 | 0 | 32098 | 5242 | 5070 | 5211 |
-| parallelVM | 1M | 18806 | 0 | 21821 | 3494 | 3156 | 3325 |
-| parallelVM | 2M | 8615 | 0 | 3095 | 346 | 5 | 16 |
-| sort | 512K | 1354 | 561 | 1291 | 1756 | 1463 | 1683 |
-| sort | 1M | 206 | 1728 | 143 | 814 | 521 | 614 |
-| sort | 2M | 64 | 1845 | 1 | 293 | 0 | 0 |
+| Test | RAM size | Tempo (s) | TLB fault (free) | TLB fault (replace) | TLB Invalidation | Page fault | Swap read (page in) | Swap write (page out) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| ctest | 512K | 12248.748 | 92867 | 32645 | 92804 | 124986 | 124726 | 124912 |
+| ctest | 1M | 11602.368 | 9658 | 116309 | 9595 | 123935 | 123675 | 123735 |
+| ctest | 2M | 13.022 | 64 | 120321 | 1 | 260 | 0 | 0 |
+| forktest | 512K | 3.795 | 221 | 0 | 220 | 28 | 34 | 34 |
+| forktest | 1M | 0.844 | 212 | 0 | 72 | 5 | 0 | 0 |
+| forktest | 2M | 0.848 | 214 | 0 | 74 | 5 | 0 | 0 |
+| huge | 512K | 292.087 | 2896 | 706 | 2833 | 3582 | 3067 | 3511 |
+| huge | 1M | 270.589 | 359 | 3238 | 296 | 3423 | 2908 | 3225 |
+| huge | 2M | 231.972 | 170 | 3398 | 107 | 3155 | 2640 | 2702 |
+| matmult | 512K | 58.763 | 631 | 193 | 568 | 813 | 430 | 740 |
+| matmult | 1M | 46.859 | 106 | 695 | 43 | 772 | 389 | 572 |
+| matmult | 2M | 0.686 | 64 | 732 | 1 | 383 | 0 | 0 |
+| malloctest | 512K | 0.625 | 7 | 0 | 1 | 7 | 0 | 0 |
+| malloctest | 1M | 0.655 | 7 | 0 | 1 | 7 | 0 | 0 |
+| malloctest | 2M | 0.627 | 7 | 0 | 1 | 7 | 0 | 0 |
+| palin | 512K | 15.321 | 5 | 0 | 1 | 5 | 0 | 0 |
+| palin | 1M | 15.321 | 5 | 0 | 1 | 5 | 0 | 0 |
+| palin | 2M | 15.295 | 5 | 0 | 1 | 5 | 0 | 0 |
+| parallelVM | 512K | 523.375 | 16858 | 0 | 32098 | 5242 | 5070 | 5211 |
+| parallelVM | 1M | 349.415 | 18806 | 0 | 21821 | 3494 | 3156 | 3325 |
+| parallelVM | 2M | 12.830 | 8615 | 0 | 3095 | 346 | 5 | 16 |
+| sort | 512K | 160.582 | 1354 | 561 | 1291 | 1756 | 1463 | 1683 |
+| sort | 1M | 57.310 | 206 | 1728 | 143 | 814 | 521 | 614 |
+| sort | 2M | 3.538 | 64 | 1845 | 1 | 293 | 0 | 0 |
 
----
 ### Analisi e Valutazione delle Prestazioni
 
 #### Fenomeno del Thrashing e test strided (ctest e huge)
 Il test ctest evidenza la vulnerabilità dell'algoritmo di rimpiazzamento FIFO globale in presenza di accessi ciclici a un'area di memoria più grande della RAM fisica disponibile.
-- Con **2MB** di RAM, l'intero array da 1MB e il codice del processo risiedono in memoria contemporaneamente. Non si verificano operazioni di swap e l'esecuzione richiede soltanto 13 secondi.
-- Con **1MB** e **512KB** di RAM, lo spazio fisico è inferiore alla dimensione dell'array più il kernel. L'accesso strided ciclico del test comporta che ad ogni iterazione la pagina virtuale richiesta sia proprio quella sfrattata più di recente. Si innesca una condizione di thrashing continuo in cui quasi ogni accesso in memoria solleva un page fault che richiede la scrittura del frame vittima su swap e la lettura del frame richiesto dal disco di swap. Il tempo complessivo di esecuzione sale a oltre 11,000 secondi.
-Il test huge mostra una situazione analoga, ma poiché la dimensione totale dell'array è di **8MB**, la memoria fisica di 2MB non è comunque sufficiente per contenere i dati del processo, portando ad un tempo di esecuzione simile in tutte e tre le configurazioni a causa del thrashing inevitabile indotto dalla dimensione dei dati.
+- Con 2MB di RAM, l'intero array da 1MB e il codice del processo risiedono in memoria contemporaneamente. Non si verificano operazioni di swap e l'esecuzione richiede soltanto 13 secondi.
+- Con 1MB e 512KB di RAM, lo spazio fisico è inferiore alla dimensione dell'array più il kernel. L'accesso strided ciclico del test comporta che ad ogni iterazione la pagina virtuale richiesta sia proprio quella sfrattata più di recente. Si innesca una condizione di thrashing continuo in cui quasi ogni accesso in memoria solleva un page fault che richiede la scrittura del frame vittima su swap e la lettura del frame richiesto dal disco di swap. Il tempo complessivo di esecuzione sale a oltre 11,000 secondi.
+Il test huge mostra una situazione analoga, ma poiché la dimensione totale dell'array è di 8MB, la memoria fisica di 2MB non è comunque sufficiente per contenere i dati del processo, portando ad un tempo di esecuzione simile in tutte e tre le configurazioni a causa del thrashing inevitabile indotto dalla dimensione dei dati.
 
 #### Località spaziale in Quicksort (sort)
 Il test sort ordina un array da 576KB appoggiandosi ad un array temporaneo delle stesse dimensioni (per un totale di 1.125MB).
-- Con **2MB** di RAM l'intero set di dati risiede stabilmente in memoria (0 operazioni di swap).
-- Riducendo la memoria fisica a **1MB**, si osserva un aumento contenuto delle letture e scritture da swap (521 letture, 614 scritture). L'algoritmo quicksort opera dividendo ricorsivamente l'array in partizioni. Non appena la dimensione delle sotto-partizioni scende al di sotto della RAM fisica disponibile al processo, l'ordinamento in loco avviene senza generare ulteriori page fault, ordinando localmente e riducendo l'overhead di I/O rispetto ad una scansione lineare globale.
-- Riducendo ulteriormente la memoria a **512KB**, la soglia a cui le partizioni risiedono completamente in RAM si abbassa drasticamente, obbligando il sistema a ricorrere molto più frequentemente allo swap (1,463 letture) e triplicando il tempo di esecuzione (da 57 a 160 secondi).
+- Con 2MB di RAM l'intero set di dati risiede stabilmente in memoria (0 operazioni di swap).
+- Riducendo la memoria fisica a 1MB, si osserva un aumento contenuto delle letture e scritture da swap (521 letture, 614 scritture). L'algoritmo quicksort opera dividendo ricorsivamente l'array in partizioni. Non appena la dimensione delle sotto-partizioni scende al di sotto della RAM fisica disponibile al processo, l'ordinamento in loco avviene senza generare ulteriori page fault, ordinando localmente e riducendo l'overhead di I/O rispetto ad una scansione lineare globale.
+- Riducendo ulteriormente la memoria a 512KB, la soglia a cui le partizioni risiedono completamente in RAM si abbassa drasticamente, obbligando il sistema a ricorrere molto più frequentemente allo swap (1,463 letture) e triplicando il tempo di esecuzione (da 57 a 160 secondi).
 
 #### Allocazione stack e limiti di memoria fisica (parallelVM e forktest)
 Il test parallelVM crea 24 processi figli paralleli, ciascuno dei quali esegue moltiplicazioni di matrici.
-- Nella configurazione a **512KB**, 11 sottoprocessi falliscono con errore di out-of-memory. Ciascun processo richiede l'allocazione di una pagina non scambiabile per lo stack del kernel. Sotto forte pressione di memoria, la coremap esaurisce i frame fisici allocabili forzando il fallimento della chiamata fork.
-- Con **1MB** e **2MB** di RAM, lo spazio fisico è sufficiente per ospitare i blocchi di controllo e i descrittori di tutti i processi. Con 2MB, il sistema sperimenta un numero irrilevante di swap-out (16 scritture, 5 letture) e completa il calcolo in soli 12.8 secondi.
+- Nella configurazione a 512KB, 11 sottoprocessi falliscono con errore di out-of-memory. Ciascun processo richiede l'allocazione di una pagina non scambiabile per lo stack del kernel. Sotto forte pressione di memoria, la coremap esaurisce i frame fisici allocabili forzando il fallimento della chiamata fork.
+- Con 1MB e 2MB di RAM, lo spazio fisico è sufficiente per ospitare i blocchi di controllo e i descrittori di tutti i processi. Con 2MB, il sistema sperimenta un numero irrilevante di swap-out (16 scritture, 5 letture) e completa il calcolo in soli 12.8 secondi.
 - Il test forktest sotto 512KB presenta un numero di swap read (34) maggiore dei page fault (28). Questo accade perché `pagetable_copy` legge dallo swap del padre e popola la pagina del figlio chiamando direttamente `swap_read`, evitando il sollevamento dell'eccezione hardware gestita da `vm_fault` che incrementerebbe il contatore di page fault.
+
