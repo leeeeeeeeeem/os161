@@ -3,7 +3,7 @@
 - Corso: Programmazione di Sistema
 - Docente: Sarah Azimi
 - Progetto: OS161 B
-- Studenti: G42 - Greco Eleonora s354761, Jafrancesco Chiara s355023, Lemerle Stefano Thomas s353334
+- Studenti: G42 - Greco Eleonora s354761, Jafrancesco Chiara s355023, Lemerle Stefano s353334
 
 ## Esecuzione programmi utente
 Per poter eseguire i test sulla VM, è necessario poter eseguire i programmi utente oltre ai test kernel, per fare questo abbiamo modificato il file `runprogram.c`, contenente la funzione omonima. Abbiamo implementato un supporto per la gestione del passaggio di argomenti dal command line (`argc` e `argv`) al programma utente da parte del kernel, prima del passaggio a user mode. Per fare questo la funzione:
@@ -114,21 +114,15 @@ Effettua le seguenti operazioni:
 2. Controlla se la page table di 2 livello esiste e nel caso negativo la alloca.
 3. Preleva l'entry della pagina corrispondente all'indirizzo fornito, utilizzando indici di livello 1 e 2.
 4. Leggendo l'entry ci possono essere 3 casistiche diverse:
-    
     - L'entry è presente in RAM:
-
         5. In questo caso l'entry è diversa da 0 e `PTE_PRESENT` è settato, la funzione salta alla fine e restituisce l'indirizzo fisico registrato.
-
     - L'entry è uguale a 0:
-
         5. Il processo sta accedendo a questa pagina per la prima volta. Si alloca un frame della RAM, se è esaurita, questa chiamata porta all'eviction di altre pagine.
         6. Azzera la memoria fisica allocata chiamando `bzero`.
         7. Mappa l'indirizzo fisico combinandolo con la flag `PTE_PRESENT` e lo scrive nella pagetable.
         8. Associa il frame all'address space nella coremap chiamando `coremap_set_owner`.
         9. Restituisce l'indirizzo fisico appena allocato.
-
     - L'entry è presente sul disco (swap-in): 
-
         5. Significa che flag `PTE_SWAPPED` è settato, viene allocata una nuova pagina con `alloc_kpages`.
         6. Viene estratto l'indice dello slot di swap dai bit più alti
         7. Viene letta la pagina dal disco con `swap_read` e i dati vengono scritti nella pagina appena allocata.
