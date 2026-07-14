@@ -3,7 +3,7 @@
 - Corso: Programmazione di Sistema
 - Docente: Sarah Azimi
 - Progetto: OS161 B
-- Studenti: G42 - Greco Eleonora s354761, Jafrancesco Chiara s355023, Lemerle Stefano s353334
+- Studenti: G42 - Greco Eleonora s354761, Jafrancesco Chiara s355023, Lemerle Stefano Thomas s353334
 
 ## Esecuzione programmi utente
 Per poter eseguire i test sulla VM, è necessario poter eseguire i programmi utente oltre ai test kernel, per fare questo abbiamo modificato il file `runprogram.c`, contenente la funzione omonima. Abbiamo implementato un supporto per la gestione del passaggio di argomenti dal command line (`argc` e `argv`) al programma utente da parte del kernel, prima del passaggio a user mode. Per fare questo la funzione:
@@ -203,14 +203,14 @@ Prende in input `faulttype` di tipo intero, che memorizza il tipo di fault e `fa
 ### Raccoglimento statistiche
 Per testare e valutare le prestazioni del sistema finito abbiamo introdotto un meccanismo di conteggio delle statistiche, all'interno del file `vmstats.c` e il relativo header. Abbiamo 6 variabili globali che fungono da contatori per:
 
-- TLB fault (free), ovver risolto trovando uno slot libero;
+- TLB fault (free), ovvero risolto trovando uno slot libero;
 - TLB fault (replace), risolto rimpiazzando uno slot preesistente;
 - Invalidazioni del TLB;
 - Page Fault;
 - Letture dal disco di Swap (anche detto page in);
 - Scritture sul disco di Swap (anche detto page out).
 
-Abbiamo definito funzioni per iniziare la registrazione delle statistiche, per fermare la registrazione, per resettare i contatori e per stampare le statistiche. Infine ovviamente abbiamo definito una funzione che aumenta il contatore, in base al tipo di statistica che si vuole registrare (`vm_record_stat`, le chiamate a questa funzione sono state inserite opportunamente all'interno dei vari file relativi alla nostra implementazione. 
+Abbiamo definito funzioni per iniziare la registrazione delle statistiche, per fermare la registrazione, per resettare i contatori e per stampare le statistiche. Infine abbiamo definito una funzione che aumenta i contatori, in base al tipo di statistica che si vuole registrare (`vm_record_stat`), le chiamate a questa funzione sono state inserite opportunamente all'interno dei vari file relativi alla nostra implementazione. 
 
 ### Comando `vmstats`
 Per fornire un'interfaccia a questo meccanismo, abbiamo introdotto a `menu.c` il comando `vmstats`, il quale chiama le funzioni definite nel file `vmstats.c`. Il comando viene invocato scrivendo `vmstats <flag>` sul menu, dove `<flag>` può essere:
@@ -252,7 +252,7 @@ Abbiamo eseguito tutti i test lato utente nella cartella `testbin/` relativi al 
 
 *parallelVM con una configurazione di 512K riesce a forkare solamente 13/24 processi e i valori riportati riflettono questo, questo fenomeno è spiegato meglio sotto.
 
-### Analisi e delle prestazioni
+### Analisi delle prestazioni
 
 #### Thrashing per ctest e huge
 Il test ctest motra la vulnerabilità dell'algoritmo di rimpiazzamento FIFO. Questo è un test che crea un array da 1MB e successivamente accede all'array in maniera spezzata, accedendo a elementi con una distanza tra i loro indici pari a `stride`, che di default vale 477. Ogni salto equivale a 477 * 4 byte = 1908 byte (circa mezza pagina), questo rimuove completamente il principio della località spaziale.
@@ -271,7 +271,7 @@ Il test huge mostra una situazione analoga, ma visto che la dimensione totale de
 #### Località spaziale in sort
 Il test sort ordina un array da 576KB appoggiandosi ad un array temporaneo delle stesse dimensioni, con un totale di oltre 1MB. Osserviamo che:
 
-- Con 2MB di RAM, tutti i dati riescono a essere memorizzati in memoria, questo viene riflesso nelle scritture e letture sul disco di swap pari a 0.
+- Con 2MB di RAM, tutti i dati riescono a essere salvati in memoria, questo viene riflesso nelle scritture e letture sul disco di swap pari a 0.
 - Riducendo la RAM a 1MB, si osserva un aumento delle letture e scritture da swap. L'algoritmo quicksort divide ricorsivamente l'array in partizioni. Non appena la dimensione delle sotto partizioni diventa minore della RAM fisica disponibile, l'ordinamento può avvenire senza ulteriori page fault, ordinando, riducento il numero di operazioni di I/O. Questo è un caso in cui vale l'assunzione della località spaziale
 - Riducendo la memoria a 512KB, la soglia a cui le partizioni risiedono in RAM si abbassa, obbligando il sistema ad utilizzare più frequentemente lo swap e quindi triplicando il tempo di esecuzione.
 
