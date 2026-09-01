@@ -1,229 +1,223 @@
-# Implementazione Virtual Memory su OS161
+# Virtual Memory Implementation on OS161
 
-- Corso: Programmazione di Sistema
-- Docente: Sarah Azimi
-- Progetto: OS161 B
-- Studenti: G42 - Greco Eleonora s354761, Jafrancesco Chiara s355023, Lemerle Stefano Thomas s353334
+## User Program Execution
+To run the VM tests, it is necessary to be able to run user programs in addition to kernel tests; to do this, we modified the `runprogram.c` file, containing the function of the same name. We implemented support for passing command-line arguments (`argc` and `argv`) from the kernel to the user program before transitioning to user mode. To do this, the function:
 
-## Esecuzione programmi utente
-Per poter eseguire i test sulla VM, è necessario poter eseguire i programmi utente oltre ai test kernel, per fare questo abbiamo modificato il file `runprogram.c`, contenente la funzione omonima. Abbiamo implementato un supporto per la gestione del passaggio di argomenti dal command line (`argc` e `argv`) al programma utente da parte del kernel, prima del passaggio a user mode. Per fare questo la funzione:
+- defines the user address space stack by calling `as_define_stack` and saves a pointer to its first address;
 
-- definisce lo stack dell'address space utente chiamando `as_define_stack` e ne salva un puntatore al primo indirizzo;
+- temporarily allocates a pointer array in the kernel (with `kmalloc`) to store the addresses of the strings representing the parameters;
 
-- alloca temporaneamente nel kernel (con `kmalloc`) un array di puntatori per poter memorizzare gli indirizzi delle strighe che rappresentano i parametri;
+- copies strings from the kernel to the user stack using `copyoutstr`, decrementing the stack pointer each time, and saves the virtual addresses into the previously defined array `argv_ptrs`;
 
-- copia le strighe dal kernel allo stack utente usando `copyoutstr`, decrementando ogni volta lo stack pointer, inoltre salva gli indirizzi virtuali nell'array definito prima `argv_ptrs`;
+- aligns the stack pointer to 8 bytes;
 
-- allinea lo stack pointer a 8 byte;
+- copies the `argv_ptrs` array onto the user stack using the `copyout` function, providing the user process with an accessible array of strings;
 
-- copia l'array `argv_ptrs` sullo stack utente, usando la funzione `copyout`, in modo da fornire al processo utente un array di stringhe a cui può accedere;
+- frees `argv_ptrs` from kernel memory, performs a further alignment of the stack, and adds 16 bytes of space for the stack frame;
 
-- libera `argv_ptrs` dalla memoria kernel, effettua un ulteriore allineamento dello stack e aggiunge 16 byte di spazio per lo stack frame;
+- calls `enter_new_process`, passing the number of arguments, the stack pointer, and the program's entry point.
 
-- chiama `enter_new_process` passando il numero di argomenti, lo stack pointer e l'entry point del programma.
+## System Calls and Process Management
+We identified the need to implement additional support for process control so that the menu process could wait for user process termination to correctly compute and return test execution times. Furthermore, it was necessary to test our VM implementation concurrently to verify its operation using tests such as `forktest` and `parallelvm`.
 
-## System call e gestione dei processi
-Abbiamo riscontrato il bisogno di implementare un supporto aggiuntivo per il controllo dei processi, in modo tale che il processo del menu potesse attendere la terminazione del processo utente, per poter calcolare e ritornare correttamente il tempo di esecuzione dei test. Inoltre era necessario testare la nostra implementazione della VM in maniera concorrente per verificarne il funzionamento, con test come `forktest` e `parallelvm`.
+### Process Table and New Fields in `struct proc`
+First of all, we modified `proc.c` and `proc.h` to improve process management. We modified the `struct proc` data structure, adding variables to signal whether the process has terminated and whether the parent has called wait, the exit code, a semaphore for synchronization, a pointer to the parent process, and finally the PID, which is a unique process identifier.
+Inside `proc.c`, we added a Process Table: a global data structure that stores all currently active processes via an array of `struct proc` indexed by PID and protected by a spinlock, a flag storing whether the table is active or not, and a field containing the last assigned PID. The `proc_bootstrap` function was modified to initialize this data structure. Helper functions were then defined to:
 
-### Process Table e nuovi campi in `struct proc`
-Prima di tutto abbiamo modificato `proc.c` e `proc.h`, per migliorare la gestione dei processi. Abbiamo modificato la struttura dati dei processi `struct proc`, aggiungendo variabili per segnalare se il processo ha terminato e se il padre ha chiamato wait, l'exit code, un semaforo per la sincronizzazione, un puntatore al processo padre e infine il PID, ovvero un identifictore univoco del processo.
-All'interno di `proc.c` abbiamo aggiunto una Process Table: una struttura dati globale che memorizza tutti i processi attivi in quel momento, tramite un array di `struct proc` indicizzato per PID e protetto da uno spinlock, un flag che memorizza se la tabella è attiva o meno e un campo contenente l'ultimo PID assegnato. La funzione `proc_bootstrap` è stata modificata per inizializzare questa struttura dati. Sono state poi definite funzioni di supporto per:
+- insert a new process into the Process Table and assign its PID (`proc_init_waitpid`);
+- remove a process from the Process Table and deallocate it permanently (`proc_end_waitpid`);
+- wait for the termination of a child process via its PID and read its exit code (`proc_wait`);
+- retrieve a process given the PID and vice versa (`proc_search_pid` and `proc_getpid`).
 
-- inserire un nuovo processo dentro la Process Table e assegnargli il suo PID (`proc_init_waitpid`);
-- rimuovere un processo dalla Process Table e deallocarlo definitivamente (`proc_end_waitpid`);
-- attendere la terminazione di un processo figlio tramite il suo PID e leggerne l'exit code (`proc_wait`);
-- prelevare un processo dato il PID e viceversa (`proc_search_pid` e `proc_getpid`).
+### System Calls
+We built upon the newly defined architecture and implemented several necessary syscalls:
 
-### System calls
-Ci siamo basati sull'architettura appena defita e abbiamo implementato alcune syscall necessarie:
+- `sys_getpid`: Returns the current process identifier simply by looking at the `p_pid` field of its struct.
 
-- `sys_getpid`: Ritorna l'identificatore del processo attuale, guardando semplicemente il campo `p_pid` della sua struct.
+- `sys_fork`: Duplicates the current process by creating an identical child process with a separate address space, allocating a new trapframe, creating the child process, copying the address space with `as_copy`, calling `thread_fork` to start execution of the child process, and returning the child's PID to the parent.
 
-- `sys_fork`: Duplica il processo corrente creando un processo figlio identico con spazio di indirizzamento separato, allocando un nuovo trapframe, creando il processo figlio, copiando l'address space con `as_copy`, chiamando `thread_fork` per avviare l'esecuzione del process o figlio e restituendo il PID del figlio al padre.
+- `sys_exit`: Terminates execution of a process, deallocating its address space and updating its state and exit code.
 
-- `sys_exit`: Termina l'esecuzione di un processo, deallocandone l'address space, aggiornandone lo stato e l'exit code.
+- `sys_waitpid`: Suspends the calling process until the child process with the specified PID returns, utilizing the logic defined in `proc_wait`.
 
-- `sys_waitpid`: Sospende il processo chiamante finchè il processo figlio di cui è stato specificato il PID non ritorna, utilizzando la logica definita in `proc_wait`.
+- `sys_sbrk`: Modifies the size of the calling user process's heap area; this is logical memory that will be physically allocated only when needed (demand paging).
 
-- `sys_sbrk`: Modifica la dimensione dell'area heap del processo utente chiamante, si tratta di memoria logica che verrà allocata fisicamente soltanto quando necessaria (demand paging).
-
-## Architettura della Virtual Memory
-Il sistema di memoria virtuale implementato sostituisce interamente dumbvm gestendo l'allocazione on-demand, il rimpiazzamento delle pagine (eviction) e la partizione di swap.
+## Virtual Memory Architecture
+The implemented virtual memory system entirely replaces dumbvm by managing on-demand allocation, page replacement (eviction), and the swap partition.
 
 ### Coremap
-La coremap tiene traccia dello stato di tutti i frame di memoria fisica (RAM) disponibili, definendo un array indicizzato per frame number. Le entry dell'array sono di tipo `struct coremap_entry`, con i seguenti campi:
+The coremap tracks the status of all available physical memory (RAM) frames by defining an array indexed by frame number. The array entries are of type `struct coremap_entry`, with the following fields:
 
-- `occupancy_state`: Lo stato di quel frame, un enum che può essere `FREE` se il frame è libero, `IN_USE` se è allocato e `FIXED` se è allocato e non può essere dealloacato. Usiamo quest'ultimo per i frame allocati dal kernel al momento del bootstrap (quindi contenenti anche la coremap stessa) e per bloccare i frame che stanno venendo spostati sul disco di swap, per evitare problemi di concorrenza.
-- `chunk_size`: Dimensione dell'allocazione in numero di pagine/frame, diverso da 1 solamente per la memoria allocata dal kernel.
-- `owner`: L'addrspace che ha allocato quel frame, uguale a `NULL` se allocato dal kernel.
-- `vaddr`: L'indirizzo virtuale utente di quella pagina, anche questo rilevante solamente se non è un frame kernel.
-- `counter`: Contatore FIFO per l'algoritmo di rimpiazzamento delle pagine, diverso da 0 solamente per frame utente, in quanto quelli allocati dal kernel non sono considerati per il rimpiazzamento.
+- `occupancy_state`: The state of that frame, an enum that can be `FREE` if the frame is free, `IN_USE` if allocated, and `FIXED` if allocated and cannot be deallocated. We use the latter for frames allocated by the kernel at bootstrap time (thus also containing the coremap itself) and to lock frames that are being moved to the swap disk to avoid concurrency issues.
+- `chunk_size`: Allocation size in number of pages/frames, different from 1 only for memory allocated by the kernel.
+- `owner`: The address space that allocated that frame, equal to `NULL` if allocated by the kernel.
+- `vaddr`: The user virtual address of that page, also relevant only if it is not a kernel frame.
+- `counter`: FIFO counter for the page replacement algorithm, different from 0 only for user frames, as kernel-allocated frames are not considered for replacement.
 
-Viene anche definito una wait channel `eviction_wchan`, introdotto per gestire le attese ed evitare race condition tra le operazioni bloccanti di I/O (scrittura/lettura su disco di swap) e la distruzione delle pagetable in fase di terminazione dei processi. Ha il compito di sospendere temporaneamente i thread che vogliono deallocare la memoria di un processo finché ci sono operazioni di I/O su disco attive per quel processo.
+A wait channel `eviction_wchan` is also defined, introduced to handle waits and prevent race conditions between blocking I/O operations (writing/reading on swap disk) and the destruction of page tables during process termination. Its task is to temporarily suspend threads that want to deallocate a process's memory as long as there are active disk I/O operations for that process.
 
-Le funzioni definite per la coremap sono:
+The functions defined for the coremap are:
 
-- `coremap_init`: Inizializza la coremap all'inizio del bootstrap della VM, calcolandone la dimensione totale in base alla dimensione della RAM, allocando lo spazio per la coremap. Le pagine occupate dal kernel e dalla coremap stessa vengono impostate nello stato `FIXED`. Le altre vengono marcate come FREE. Viene creato anche il canale di attesa `eviction_wchan`
+- `coremap_init`: Initializes the coremap at the start of VM bootstrap, calculating its total size based on RAM size and allocating space for the coremap. Pages occupied by the kernel and by the coremap itself are set to the `FIXED` state. The others are marked as FREE. The `eviction_wchan` wait channel is also created.
 
-- `coremap_alloc`: Cerca e alloca una sequenza di `npages` contigua, se non ci sono frame liberi e la richiesta è per una pagina singola attiva il meccanismo di rimpiazzamento chiamando `coremap_evict_one` e poi riprova, ritorna un indirizzo virtuale kernel.
+- `coremap_alloc`: Searches for and allocates a contiguous sequence of `npages`; if there are no free frames and the request is for a single page, it triggers the replacement mechanism by calling `coremap_evict_one` and then retries; returns a kernel virtual address.
 
-- `coremap_free`: Riceve un indirizzo virtuale kernel e lo dealloca impostanto la/e pagina/e a `FREE`.
+- `coremap_free`: Receives a kernel virtual address and deallocates it, setting the page(s) to `FREE`.
 
-- `coremap_set_owner`: Associa un frame all'address space proprietario, registrando l'indirizzo virtuale utente associato e memorizzando il valore incrementale del contatore FIFO.
+- `coremap_set_owner`: Associates a frame with the owning address space, registering the associated user virtual address and storing the incremental FIFO counter value.
 
-- `coremap_evict_one`: Sceglie un frame utente con il contatore FIFO minore, imposta temporaneamente il suo stato a `FIXED` ed effettua lo swap-out su disco. Successivamente invalida l'entry nel TLB se presente, imposta il flag per dire che la pagina non è in RAM sulla pagetable del processo, libera il frame impostandolo a `FREE` e notifica i thread in attesa su `eviction_wchan`.
+- `coremap_evict_one`: Selects a user frame with the smallest FIFO counter, temporarily sets its state to `FIXED`, and performs swap-out to disk. Subsequently, it invalidates the entry in the TLB if present, sets the flag in the process's page table indicating that the page is not in RAM, frees the frame by setting it to `FREE`, and notifies waiting threads on `eviction_wchan`.
 
-### Interfaccia con il disco di Swap
-Abbiamo implementato un meccansimo di swap per quando la memoria principale si riempe, il disco utilizzato per questo è `lhd1`. All'interno del file `swap.c` definiamo il vnode del disco, una bitmap che indica se ogni pagina fisica del disco è occupata o meno e un lock che garantisce la mutua esclusione per tutte le operazioni. Per interfacciarci con il disco di swap utilizziamo le seguenti funzioni:
+### Interface with the Swap Disk
+We implemented a swap mechanism for when main memory fills up; the disk used for this is `lhd1`. Inside the `swap.c` file, we define the disk vnode, a bitmap indicating whether each physical disk page is occupied or not, and a lock ensuring mutual exclusion for all operations. To interface with the swap disk, we use the following functions:
 
-- `swap_bootstrap`: Connette il disco chiamando `vfs_swapon`, ne ottiene la dimensione e inizializza la bitmap.
+- `swap_bootstrap`: Connects the disk by calling `vfs_swapon`, obtains its size, and initializes the bitmap.
 
-- `swap_alloc`: Trova e riserva uno slot libero nella bitmap impostandolo a 1 sotto la protezione di `swap_lock`.
+- `swap_alloc`: Finds and reserves a free slot in the bitmap, setting it to 1 under the protection of `swap_lock`.
 
-- `swap_free`: Rilascia lo slot specificato nella bitmap impostandolo a 0.
+- `swap_free`: Releases the specified slot in the bitmap, setting it to 0.
 
-- `swap_write`: Effettua la scrittura di una pagina dalla RAM al disco, detenendo il lock.
+- `swap_write`: Performs the writing of a page from RAM to disk while holding the lock.
 
-- `swap_read`: Effettua la lettura di una pagina dalla disco al RAM, sempre detenendo il lock.
+- `swap_read`: Performs the reading of a page from disk to RAM, also while holding the lock.
 
 ### Page Table
-Il cuore del nostro sistema di Memoria Virtuale sta nella Page Table, la quale è a 2 livelli e definita per ogni processo utente. Nell'address space di un processo c'è una page directory di primo livello, contenente 1024 puntatori a tabelle di secondo livello, inizialmente inizializzate a `NULL`. Al secondo livello ci sono le page table ognuna con 1024 entry di tipo `paddr_t`, mentre l'indice di ricerca è l'indirizzo virtuale utente. 
-L'entry della page table può essere:
+The core of our Virtual Memory system lies in the Page Table, which is 2-level and defined for each user process. In a process's address space, there is a first-level page directory containing 1024 pointers to second-level tables, initially initialized to `NULL`. At the second level, there are page tables, each with 1024 entries of type `paddr_t`, while the search index is the user virtual address. 
+A page table entry can be:
 
-- **nulla**: in questo caso assume il valore di 0;
-- **nella RAM**: in questo caso l'entry corrisponde all'indirizzo del frame fisico (un multiplo di 4096 e quindi con i 12 bit inferiori a 0) nei bit più alti e la flag `PTE_PRESENT = 0x1` nei bit più bassi; 
-- **in swap**: in questo caso l'entry contiene nei 12 bit più alti il numero del blocco nel disco di swap nel quale è contenuta la pagina e la flag `PTE_SWAPPED = 0x2` nei bit più bassi.
+- **null**: in this case, it assumes the value of 0;
+- **in RAM**: in this case, the entry corresponds to the physical frame address (a multiple of 4096 and thus with the lower 12 bits set to 0) in the higher bits and the flag `PTE_PRESENT = 0x1` in the lower bits; 
+- **in swap**: in this case, the entry contains in the highest 12 bits the block number on the swap disk where the page is contained and the flag `PTE_SWAPPED = 0x2` in the lower bits.
 
-Le funzioni definite per la Page Table sono:
+The functions defined for the Page Table are:
 
-- `pagetable_create`: Crea una page directory di primo livello, inizializzando tutte le 1024 entry a NULL.
+- `pagetable_create`: Creates a first-level page directory, initializing all 1024 entries to NULL.
 
-- `pagetable_create_lv2`: Si occupa di allocare dinamicamente una page table di secondo livello, che viene fatto on-demand, ovvero solo quando il processo indirizza una pagina che deve essere salvata in questa tabella. Inizializza tutte le 1024 entry a 0.
+- `pagetable_create_lv2`: Dynamically allocates a second-level page table, which is done on-demand—that is, only when the process addresses a page that needs to be stored in this table. Initializes all 1024 entries to 0.
 
-- `pagetable_destroy`: Si occupa di dellocare la page table, ma prima aquisisce lo spinlock `mem_lock` (definito in `vm.c` e utilizzato per sincronizzare operazioni sulla VM). Successivamente controlla se ci sono frame appartenenti a questo processo che si trovano nello stato `FIXED` (stanno venendo swappate), nel caso ci siano si mette a dormire su `eviction_wchan` per evitare di deallocare pagine fisiche che stanno venendo scritte su disco. Al risveglio ripete la scanzione, una volta accertato che non ci siano più pagine fissate imposta `owner = NULL` a tutti i frame posseduti dal processo, dopo rilascia `mem_lock`. Poi scorre su ogni entry delle page table di secondo livello, deallocandole o in memoria con `free_kpages` oppure sul disco con `swap_free`. Infine libera le page table di secondo livello e poi la page directory.
+- `pagetable_destroy`: Deallocates the page table, but first acquires the `mem_lock` spinlock (defined in `vm.c` and used to synchronize operations on the VM). Next, it checks if there are frames belonging to this process that are in the `FIXED` state (currently being swapped); if so, it goes to sleep on `eviction_wchan` to avoid deallocating physical pages that are being written to disk. Upon waking up, it repeats the scan; once assured that there are no more fixed pages, it sets `owner = NULL` for all frames owned by the process, then releases `mem_lock`. It then iterates over every entry in the second-level page tables, deallocating them either in memory with `free_kpages` or on disk with `swap_free`. Finally, it frees the second-level page tables and then the page directory.
 
-- `pagetable_copy`: Effettua una copia in profondità della pagetable dell'address space padre all'address space figlio. Alloca page table di primo e secondo livello e per ogni entry alloca una nuova pagina in memoria, effettua una copia con `memcpy` e chiama `coremap_set_owner` con l'address space del figlio. Nel caso l'entry non sia in memoria la legge dal disco di swap prima di inserirla.
+- `pagetable_copy`: Performs a deep copy of the parent address space's page table to the child address space. Allocates first and second-level page tables and, for each entry, allocates a new page in memory, performs a copy using `memcpy`, and calls `coremap_set_owner` with the child's address space. If the entry is not in memory, it reads it from the swap disk before inserting it.
 
-- `pagetable_get_entry`: Restituisce un puntatore a `paddr_t`, utilizzato per modificare entry nella page table quando una pagina viene spostata sul disco di swap ed è necessario impostare `PTE_SWAPPED` e scrivere lo swap slot.
+- `pagetable_get_entry`: Returns a pointer to `paddr_t`, used to modify entries in the page table when a page is moved to the swap disk and it is necessary to set `PTE_SWAPPED` and write the swap slot.
 
 #### `pagetable_translate`
-Questa funzione è una delle più fondamentali per la nostra implenetazione, in quanto mette insieme le varie componenti di basso livello definite precedentemente, oltre al fatto che viene chiamata ogni volta che abbiamo un TLB miss. Si occupa di fare la "Page Table walk" e di effettuare traduzioni da indirizzi logici utente a indirizzi fisici, oltre a risolvere richieste di pagine on-demand.
-Effettua le seguenti operazioni:
+This function is one of the most fundamental to our implementation, as it brings together the lower-level components defined previously, besides being called every time a TLB miss occurs. It handles the "Page Table walk" and translates user logical addresses to physical addresses, in addition to resolving on-demand page requests.
+It performs the following operations:
 
-1. Prende in input un `vaddr_t` e da esso estrae indici per la page directory di primo livello e per la page table di secondo livello.  
-2. Controlla se la page table di 2 livello esiste e nel caso negativo la alloca.
-3. Preleva l'entry della pagina corrispondente all'indirizzo fornito, utilizzando indici di livello 1 e 2.
-4. Leggendo l'entry ci possono essere 3 casistiche diverse:
-    - L'entry è presente in RAM: <br>
-        5. In questo caso l'entry è diversa da 0 e `PTE_PRESENT` è settato, la funzione salta alla fine e restituisce l'indirizzo fisico registrato. <br>
-    - L'entry è uguale a 0: <br>
-        5. Il processo sta accedendo a questa pagina per la prima volta. Si alloca un frame della RAM, se è esaurita, questa chiamata porta all'eviction di altre pagine. <br>
-        6. Azzera la memoria fisica allocata chiamando `bzero`. <br>
-        7. Mappa l'indirizzo fisico combinandolo con la flag `PTE_PRESENT` e lo scrive nella pagetable. <br>
-        8. Associa il frame all'address space nella coremap chiamando `coremap_set_owner`. <br>
-        9. Restituisce l'indirizzo fisico appena allocato. <br>
-    - L'entry è presente sul disco (swap-in): <br>
-        5. Significa che flag `PTE_SWAPPED` è settato, viene allocata una nuova pagina con `alloc_kpages`. <br>
-        6. Viene estratto l'indice dello slot di swap dai bit più alti. <br>
-        7. Viene letta la pagina dal disco con `swap_read` e i dati vengono scritti nella pagina appena allocata. <br>
-        8. Viene liberato lo slot sulla partizione di swap bitmap con `swap_free`. <br>
-        9. Aggiorna l'entry impostando l'indirizzo del nuovo frame fisico e settando il flag `PTE_PRESENT` <br>
-        10. Registra l'addrspace nella coremap con `coremap_set_owner`. <br>
-        11. Restituisce il nuovo indirizzo fisico.
+1. Takes a `vaddr_t` as input and extracts from it indices for the first-level page directory and the second-level page table.  
+2. Checks if the second-level page table exists and, if not, allocates it.
+3. Retrieves the page entry corresponding to the provided address using level 1 and level 2 indices.
+4. Upon reading the entry, 3 different cases can occur:
+    - The entry is present in RAM: <br>
+        5. In this case, the entry is non-zero and `PTE_PRESENT` is set; the function jumps to the end and returns the recorded physical address. <br>
+    - The entry is equal to 0: <br>
+        5. The process is accessing this page for the first time. A RAM frame is allocated; if exhausted, this call leads to the eviction of other pages. <br>
+        6. Zeroes out the allocated physical memory by calling `bzero`. <br>
+        7. Maps the physical address by combining it with the `PTE_PRESENT` flag and writes it to the page table. <br>
+        8. Associates the frame with the address space in the coremap by calling `coremap_set_owner`. <br>
+        9. Returns the newly allocated physical address. <br>
+    - The entry is present on disk (swap-in): <br>
+        5. Means that the `PTE_SWAPPED` flag is set; a new page is allocated using `alloc_kpages`. <br>
+        6. The swap slot index is extracted from the highest bits. <br>
+        7. The page is read from disk with `swap_read` and data is written into the newly allocated page. <br>
+        8. The slot on the swap partition bitmap is freed with `swap_free`. <br>
+        9. Updates the entry by setting the new physical frame address and setting the `PTE_PRESENT` flag. <br>
+        10. Registers the address space in the coremap with `coremap_set_owner`. <br>
+        11. Returns the new physical address.
 
-### Address space
-Ogni processo utente possiete un suo address space, noi lo abbiamo implementato inserendo i seguenti campi all'interno di `struct addrspace`:
+### Address Space
+Each user process possesses its own address space; we implemented it by adding the following fields inside `struct addrspace`:
 
-- `regions` : Puntatore alla testa della lista concatenata di `struct region`. Questo ci permette di gestire un numero
-  indefinito di regioni, superando il limite di dumbvm. `struct region` contiene i seguenti campi:
-    - `vaddr`: L'indirizzo virtuale di partenza della regione.
-    - `npages`: La dimensione della regione espressa in numero di pagine.
-    - `readable`,  `writeable`, `executable`: Flag booleani che definiscono i permessi di lettura, scrittura ed esecuzione per la regione.
-    - `writeable_backup`: serve per disabilitare temporaneamente la protezione in scrittura delle regioni di memoria durante la fase di caricamento dell'eseguibile, ripristinando poi i permessi corretti prima dell'esecuzione del programma.
-- `stack_base`: L'indirizzo di base dello stack utente.
-- `stack_npages`: La dimensione massima consentita per lo stack (impostata a 16 pagine).
-- `pagetable`: Puntatore alla page directory di primo livello.
-- `heap_start`: L'indirizzo virtuale di partenza dell'heap.
-- `heap_end`: Il limite superiore corrente dell'heap (che si estende dinamicamente con chiamate a `sys_sbrk`).
-- `is_copying`: Un flag booleano di sincronizzazione. Quando è `true` (durante la un operazione di `as_copy`), `coremap_evict_one` non selezionerà come vittima di eviction nessun pagina appartenente a questo address space.
+- `regions`: Pointer to the head of the linked list of `struct region`. This allows us to manage an indefinite number of regions, overcoming the limitation of dumbvm. `struct region` contains the following fields:
+    - `vaddr`: The starting virtual address of the region.
+    - `npages`: The size of the region expressed as a number of pages.
+    - `readable`, `writeable`, `executable`: Boolean flags defining read, write, and execute permissions for the region.
+    - `writeable_backup`: used to temporarily disable write protection on memory regions during the executable loading phase, subsequently restoring correct permissions prior to program execution.
+- `stack_base`: The base address of the user stack.
+- `stack_npages`: The maximum allowed size for the stack (set to 16 pages).
+- `pagetable`: Pointer to the first-level page directory.
+- `heap_start`: The starting virtual address of the heap.
+- `heap_end`: The current upper limit of the heap (which expands dynamically via calls to `sys_sbrk`).
+- `is_copying`: A boolean synchronization flag. When `true` (during an `as_copy` operation), `coremap_evict_one` will not select any page belonging to this address space as an eviction victim.
  
-Le funzioni definite sono:
+The defined functions are:
 
-- `as_create`: Alloca e inizializza un nuovo address space, impostando la lista delle regioni a `NULL`, allocando la page table e inizializzando gli altri campi.
+- `as_create`: Allocates and initializes a new address space, setting the region list to `NULL`, allocating the page table, and initializing the other fields.
 
-- `as_destroy`: Dealloca un address space, liberando prima le regioni nella linked list, poi la page table e infine la `struct addrspace` in se.
+- `as_destroy`: Deallocates an address space, freeing first the regions in the linked list, then the page table, and finally the `struct addrspace` itself.
 
-- `as_copy`: Crea una copia identica dell'address space durante la fork. Alloca un nuovo address space, imposta il flag `is_copying` a `true` su sia padre che figlio. Poi copia i limiti dell'heap e dello stack e duplica la pagetable chiamando `pagetable_copy`. Poi scorre la lista delle regioni del padre e alloca ogni regione nella lista del figlio. Infine rimette `is_copying = false` e ritorna il nuovo address space.
+- `as_copy`: Creates an identical copy of the address space during fork. Allocates a new address space and sets the `is_copying` flag to `true` on both parent and child. It then copies the heap and stack boundaries and duplicates the page table by calling `pagetable_copy`. Next, it iterates through the parent's region list and allocates each region in the child's list. Finally, it resets `is_copying = false` and returns the new address space.
 
-- `as_activate`: Carica e attiva l'address space del processo attuale, di base si occupa di fare un flush del TLB durante il cambio di contesto tra due address space diversi. Per fare in modo che non si invalidi tutto il TLB se stiamo solo cambiando contesto temporaneamente ma non cambiando address space (la casistica principale in cui succede questo è il context switch per I/O sul disco di swap), introduciamo la variabile globale `active_as`. Questa funzione esegue il flush completo del TLB solamente se l'address space che si vuole attivare è diverso da `activa_as`, il quale viene aggiornato alla fine della funzione. Tutto questo viene fatto con le interruzioni disabilitate.
+- `as_activate`: Loads and activates the address space of the current process; basically handles flushing the TLB during context switches between two different address spaces. To ensure that the whole TLB is not invalidated when merely switching context temporarily without changing address spaces (the primary scenario being context switching for swap disk I/O), we introduce the global variable `active_as`. This function performs a complete TLB flush only if the address space to be activated is different from `active_as`, which is updated at the end of the function. All of this is done with interrupts disabled.
 
-- `as_deactivate`: Disattiva l'address space del processo attuale e imposta la variabile globale `active_as = NULL`, sempre con interrupt disabilitate.
+- `as_deactivate`: Deactivates the current process's address space and sets the global variable `active_as = NULL`, also with interrupts disabled.
 
-- `as_define_region`: Definisce e registra una nuova regione logica (es. codice o dati) all'interno dell'address space, allocando un nuovo `struct region` e aggiungendolo in coda alla linked list `regions`, aggiorna anche la posizione dell'heap mettendola subito dopo il limite della regione appena creata.
+- `as_define_region`: Defines and registers a new logical region (e.g., code or data) within the address space, allocating a new `struct region` and appending it to the `regions` linked list; it also updates the heap location, placing it right after the limit of the newly created region.
 
-- `as_prepare_load`: Rende tutte le regioni temporaneamente scrivibili, per preparare il caricamento di un file ELF. Quando un nuovo processo viene chiamato, le sue regioni (tra cui per esempio .text che contiene il codice eseguibile e non è scrivibile) vengono definite insieme ai loro permessi con `as_define_region`. Successivamente il kernel dovrà leggere le varie regioni del file ELF e scriverle su una pagina in memoria, per fare questo necessita di permessi di scrittura su tutte le regioni. Per risolvere, questa funzione salva in `writeable_backup` i permessi originali e imposta tutte le regioni come `writeable`, dopo di questa verrà chiamata `load_elf`, che potrà quindi scrivere su tutte le regioni.
+- `as_prepare_load`: Makes all regions temporarily writeable to prepare for loading an ELF file. When a new process is invoked, its regions (such as .text, which contains executable code and is non-writeable) are defined along with their permissions using `as_define_region`. Subsequently, the kernel needs to read the various regions of the ELF file and write them to a page in memory; to do this, it requires write permissions on all regions. To solve this, this function saves original permissions in `writeable_backup` and sets all regions to `writeable`; following this, `load_elf` will be called, which can then write to all regions.
 
-- `as_complete_load`: Dopo che è stato chiamata `load_elf`, è necessario ripristinare i permessi originali prima di eseguire il programma, quest funzione si occupa di fare quello, riscrivendo su `writeable` il valore di `writeable_backup` per ogni regione.
+- `as_complete_load`: After `load_elf` has been called, original permissions must be restored before executing the program; this function handles that by writing the value of `writeable_backup` back to `writeable` for each region.
 
-- `as_define_stack`: Configura i limiti dello stack utente, nella nostra implementazione lo stack inizio da `0x80000000` e ha come dimensione 16 pagine.
+- `as_define_stack`: Configures the bounds of the user stack; in our implementation, the stack starts at `0x80000000` and has a size of 16 pages.
 
-### Gestore centrale della VM
-Il file `vm.c` unisce tutte le sottoparti appena definite, si occupa di sostituire completamente `dumbvm.c` e quindi definisce tutte le funzioni relative alla memoria che vengonono chiamate dal resto del kernel.
-Prima di tutto definisce un paio di variabili globali necessari per il funzionamento del sistema:
+### Central VM Manager
+The `vm.c` file brings together all the sub-parts defined above; it takes care of entirely replacing `dumbvm.c` and thus defines all memory-related functions called by the rest of the kernel.
+First of all, it defines a couple of global variables necessary for system operation:
 
-- `vm_ready`: un booleano che memorizza se la VM è utilizzabile o meno, nelle prime fasi del bootstrap del kernel la coremap non è ancora allocata e quindi il sistema di VM non è ancora attivo;
-- `mem_lock`: uno spinlock che serve a serializzare tutte le operazioni sulla coremap e a proteggere le chiamate a `wchan_sleep` e `wchan_wakeall` su `eviction_wchan`.
+- `vm_ready`: a boolean storing whether the VM is usable or not; in the early phases of kernel bootstrap, the coremap is not yet allocated, so the VM system is not yet active;
+- `mem_lock`: a spinlock used to serialize all operations on the coremap and protect calls to `wchan_sleep` and `wchan_wakeall` on `eviction_wchan`.
 
-Le funzioni definite sono:
+The defined functions are:
 
-- `vm_bootstrap`: Chiamata durante l'inizializzazione del kernel, chiama `coremap_init` per definire la coremap e `swap_init` per inizializzare la partizione di swap. Infine imposta `vm_ready` a `true` per abilitare l'utilizzo della VM.
+- `vm_bootstrap`: Called during kernel initialization, calls `coremap_init` to define the coremap and `swap_init` to initialize the swap partition. Finally, sets `vm_ready` to `true` to enable VM usage.
 
-- `alloc_kpages`: Alloca un blocco continuo di `npages` per l'uso del kernel, se la VM non è pronta usa `ram_stealmem` e altrimenti chiama `coremap_alloc`, restituisce l'indirizzo virtuale della prima pagina allocata.
+- `alloc_kpages`: Allocates a contiguous block of `npages` for kernel use; if the VM is not ready, it uses `ram_stealmem`, otherwise it calls `coremap_alloc`; returns the virtual address of the first allocated page.
 
-- `free_kpages`: Libera la memoria precedentemente allocata da `alloc_kpages`, chiamando `coremap_free`.
+- `free_kpages`: Frees memory previously allocated by `alloc_kpages` by calling `coremap_free`.
 
 #### `vm_fault`
-Questa funzione è il gestore centrale della VM, si occupa di risolvere tutte le eccezioni scatenate dagli accessi in memoria. Viene chiamata ogni volta che si ha un TLB miss, ovvero quando un thread vuole scrivere su un'indirizzo virtuale la cui pagina non è presente nel TLB, viene anche chiamata se un thread cerca di scrivere a un indirizzo virtuale marcato come un indirizzo di sola scrittura nel TLB. Si occupa di risolvere queste eccezioni aggiornando il TLB o restituendo un errore. 
-Prende in input `faulttype` di tipo intero, che memorizza il tipo di fault e `faultaddress` che è il `vaddr_t` che ha scatenato l'eccezione. Svolge le seguenti operazioni:
+This function is the central VM manager; it handles resolving all exceptions triggered by memory accesses. It is called whenever a TLB miss occurs—that is, when a thread wants to write to a virtual address whose page is not present in the TLB—and it is also called if a thread attempts to write to a virtual address marked as read-only in the TLB. It resolves these exceptions by updating the TLB or returning an error.
+It takes an integer `faulttype`, which stores the fault type, and `faultaddress`, which is the `vaddr_t` that triggered the exception, as inputs. It performs the following operations:
 
-1. Preleva l'address space del processo corrente e ritorna `EFAULT` se è `NULL`.
-2. Controlla che `faultaddress` sia diverso da 0 e che `faulttype` sia un valore valido, altrimenti ritorna `EFAULT`.
-3. Scorre la linked list delle regioni dell'address space per controllare se `faultaddress` è contenuto in uno di esse, se si controlla se il tipo di permessi definiti dalla regione e l'operazione descritta da `faulttype` sono compatibili, se non lo sono ritorna `EFAULT`, altrimenti salta a 6.
-4. Controlla se l'indirizzo rientra nell'heap e nello stack, se si salta a 6.
-5. Se arriva quì significa che l'indirizzo non è ne nello stack, ne nell'heap ne in nessuna regione definita dall'addrspace e quindi è un accesso illegale, restituisce `EFAULT`.
-6. Chiama `pagetable_translate`, che ritorna il `paddr` dove è presente l'indirizzo virtuale.
-7. Disabilita le interrupt e costruisce il valore da inserire nel TLB (indirizzo di pagina virtuale nei primi 32 bit e indirizzo di frame nei 32 bit più bassi).
-8. Cerca con `tlb_probe` se nel TLB esiste già una voce per la pagina virtuale che ha generato il fault (come nel caso del fault per cui la pagina era presente ma non scrivibile).
-9. Altrimenti cerca se il TLB contiene uno slot vuoto o invalido, se si ci scrive l'entry con `tlb_write`.
-10. Altrimenti sostituisce un entry valido nel TLB con `tlb_random`.
-11. Infine riabilita gli interrupt e ritorna 0 per dire che l'operazione è andata a buon fine.
+1. Retrieves the current process's address space and returns `EFAULT` if it is `NULL`.
+2. Checks that `faultaddress` is not 0 and that `faulttype` is a valid value, returning `EFAULT` otherwise.
+3. Iterates through the linked list of address space regions to check if `faultaddress` is contained within one of them; if so, checks whether the permission types defined by the region and the operation described by `faulttype` are compatible; if not, returns `EFAULT`, otherwise jumps to step 6.
+4. Checks if the address falls within the heap or stack; if so, jumps to step 6.
+5. If it reaches here, it means the address is neither in the stack, nor in the heap, nor in any region defined by the addrspace, and is therefore an illegal access; returns `EFAULT`.
+6. Calls `pagetable_translate`, which returns the `paddr` where the virtual address resides.
+7. Disables interrupts and constructs the value to insert into the TLB (virtual page address in the upper 32 bits and frame address in the lower 32 bits).
+8. Uses `tlb_probe` to check if a TLB entry already exists for the virtual page that generated the fault (as in the case of a fault where the page was present but non-writeable).
+9. Otherwise, checks if the TLB contains an empty or invalid slot; if so, writes the entry using `tlb_write`.
+10. Otherwise, replaces a valid entry in the TLB using `tlb_random`.
+11. Finally, re-enables interrupts and returns 0 to indicate that the operation succeeded.
 
-## Statistiche e benchmark
+## Statistics and Benchmarks
 
-### Raccoglimento statistiche
-Per testare e valutare le prestazioni del sistema finito abbiamo introdotto un meccanismo di conteggio delle statistiche, all'interno del file `vmstats.c` e il relativo header. Abbiamo 6 variabili globali che fungono da contatori per:
+### Statistics Collection
+To test and evaluate the performance of the completed system, we introduced a statistics counting mechanism inside the `vmstats.c` file and its relative header. We have 6 global variables acting as counters for:
 
-- TLB fault (free), ovvero risolto trovando uno slot libero;
-- TLB fault (replace), risolto rimpiazzando uno slot preesistente;
-- Invalidazioni del TLB;
-- Page Fault;
-- Letture dal disco di Swap (anche detto page in);
-- Scritture sul disco di Swap (anche detto page out).
+- TLB fault (free), i.e., resolved by finding a free slot;
+- TLB fault (replace), resolved by replacing a pre-existing slot;
+- TLB Invalidations;
+- Page Faults;
+- Reads from the Swap disk (also called page in);
+- Writes to the Swap disk (also called page out).
 
-Abbiamo definito funzioni per iniziare la registrazione delle statistiche, per fermare la registrazione, per resettare i contatori e per stampare le statistiche. Infine abbiamo definito una funzione che aumenta i contatori, in base al tipo di statistica che si vuole registrare (`vm_record_stat`), le chiamate a questa funzione sono state inserite opportunamente all'interno dei vari file relativi alla nostra implementazione. 
+We defined functions to start statistics recording, stop recording, reset counters, and print statistics. Finally, we defined a function that increments counters based on the type of statistic to record (`vm_record_stat`); calls to this function were appropriately inserted throughout the various files relating to our implementation.
 
-### Comando `vmstats`
-Per fornire un'interfaccia a questo meccanismo, abbiamo introdotto a `menu.c` il comando `vmstats`, il quale chiama le funzioni definite nel file `vmstats.c`. Il comando viene invocato scrivendo `vmstats <flag>` sul menu, dove `<flag>` può essere:
+### `vmstats` Command
+To provide an interface for this mechanism, we added the `vmstats` command to `menu.c`, which calls the functions defined in `vmstats.c`. The command is invoked by typing `vmstats <flag>` in the menu, where `<flag>` can be:
 
-- `--start`: inizia la registrazione delle statistiche sulla VM;
-- `--stop`: termina la registrazione delle statistiche;
-- `--reset`: resetta tutti i contatori delle statistiche;
-- `--print`: stampa le statistiche raccolte;
+- `--start`: starts recording VM statistics;
+- `--stop`: ends statistics recording;
+- `--reset`: resets all statistics counters;
+- `--print`: prints collected statistics;
 
-### Risultati dei test
-Abbiamo eseguito tutti i test lato utente nella cartella `testbin/` relativi al funzionamento della VM, i risultati sono riportati nella seguente tabella.
+### Test Results
+We ran all user-side tests in the `testbin/` directory related to VM operation; the results are reported in the following table.
 
-| Test | RAM size | Tempo (s) | TLB fault (free) | TLB fault (replace) | TLB Invalidation | Page fault | Swap read (page in) | Swap write (page out) |
+| Test | RAM size | Time (s) | TLB fault (free) | TLB fault (replace) | TLB Invalidation | Page fault | Swap read (page in) | Swap write (page out) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | ctest | 512K | 12248.748 | 92867 | 32645 | 92804 | 124986 | 124726 | 124912 |
 | ctest | 1M | 11602.368 | 9658 | 116309 | 9595 | 123935 | 123675 | 123735 |
@@ -250,33 +244,33 @@ Abbiamo eseguito tutti i test lato utente nella cartella `testbin/` relativi al 
 | sort | 1M | 57.310 | 206 | 1728 | 143 | 814 | 521 | 614 |
 | sort | 2M | 3.538 | 64 | 1845 | 1 | 293 | 0 | 0 |
 
-*parallelVM con una configurazione di 512K riesce a forkare solamente 13/24 processi e i valori riportati riflettono questo, questo fenomeno è spiegato meglio sotto.
+*parallelVM with a 512K configuration manages to fork only 13/24 processes and the reported values reflect this; this phenomenon is explained in more detail below.
 
-### Analisi delle prestazioni
+### Performance Analysis
 
-#### Thrashing per ctest e huge
-Il test ctest motra la vulnerabilità dell'algoritmo di rimpiazzamento FIFO. Questo è un test che crea un array da 1MB e successivamente accede all'array in maniera spezzata, accedendo a elementi con una distanza tra i loro indici pari a `stride`, che di default vale 477. Ogni salto equivale a 477 * 4 byte = 1908 byte (circa mezza pagina), questo rimuove completamente il principio della località spaziale.
-Se la RAM a disposizione è minore a 1MB, ovvero come nelle configurazioni con 512KB o anche quella da 1MB visto che parte della RAM è occupata dal kernel, succede che:
+#### Thrashing for ctest and huge
+The ctest test demonstrates the vulnerability of the FIFO replacement algorithm. This test creates a 1MB array and subsequently accesses the array in a strided manner, accessing elements with a distance between their indices equal to `stride`, which defaults to 477. Each stride equals 477 * 4 bytes = 1908 bytes (about half a page); this completely removes the principle of spatial locality.
+If the available RAM is less than 1MB, as in the 512KB configuration or even the 1MB configuration since part of the RAM is occupied by the kernel, the following occurs:
 
-- L'intero array non può risiedere totalmente nella RAM, parti di esso verranno allocate sul disco di swap.
-- Ad ogni salto, il programma accede molto frequentemente a una pagina diversa che non si trova in RAM. 
-- Questo porta a un continuo page fault, il kernel deve liberare un frame fisico (facendo swap-out) per potere caricare una pagina presente sul disco (swap-in).
-- Con un algoritmo di rimpiazzamento FIFO, la pagina richiesta a ogni iterazione finisce per essere proprio quella sfrattata più di recente.
-- Si verifica quindi il fenomeno del thrashing, ovvero il kernel passa tutto il tempo a eseguire I/O sul disco di swap invece che eseguire il codice, questo porta il tempo di esecuzione a oltre 3 ore.
+- The entire array cannot reside completely in RAM; parts of it will be allocated on the swap disk.
+- At each stride, the program very frequently accesses a different page that is not in RAM. 
+- This leads to continuous page faults; the kernel must free a physical frame (performing a swap-out) in order to load a page present on disk (swap-in).
+- With a FIFO replacement algorithm, the page requested at each iteration ends up being precisely the most recently evicted one.
+- Thus, the thrashing phenomenon occurs—that is, the kernel spends all its time performing I/O on the swap disk instead of executing code, bringing the execution time to over 3 hours.
 
-Invece per la configurazione di 2MB di RAM, l'intero array riesce a essere memorizzato in memoria e quindi il disco di swap non viene utilizzato e non si verifica il thrashing, riducendo enormemente il tempo d'esecuzione.
+In contrast, for the 2MB RAM configuration, the entire array fits in memory, so the swap disk is not used and thrashing does not occur, drastically reducing execution time.
 
-Il test huge mostra una situazione analoga, ma visto che la dimensione totale dell'array è di 8MB, la memoria fisica di 2MB non è comunque abbastanza per contenere tutti i dati, portando a un tempo di esecuzione simile in tutte e tre le configurazioni, visto che vanno tutte in thrashing. Il tempo totale è comunque minore in quanto questo test effettua un numero di accessi minore di ctest.
+The huge test shows a similar situation, but since the total array size is 8MB, 2MB of physical memory is still not enough to contain all the data, leading to a similar execution time in all three configurations as they all go into thrashing. Total time is nonetheless smaller because this test performs fewer accesses than ctest.
 
-#### Località spaziale in sort
-Il test sort ordina un array da 576KB appoggiandosi ad un array temporaneo delle stesse dimensioni, con un totale di oltre 1MB. Osserviamo che:
+#### Spatial Locality in sort
+The sort test sorts a 576KB array using a temporary array of the same size, totaling over 1MB. We observe that:
 
-- Con 2MB di RAM, tutti i dati riescono a essere salvati in memoria, questo viene riflesso nelle scritture e letture sul disco di swap pari a 0.
-- Riducendo la RAM a 1MB, si osserva un aumento delle letture e scritture da swap. L'algoritmo quicksort divide ricorsivamente l'array in partizioni. Non appena la dimensione delle sotto partizioni diventa minore della RAM fisica disponibile, l'ordinamento può avvenire senza ulteriori page fault, ordinando, riducento il numero di operazioni di I/O. Questo è un caso in cui vale l'assunzione della località spaziale
-- Riducendo la memoria a 512KB, la soglia a cui le partizioni risiedono in RAM si abbassa, obbligando il sistema ad utilizzare più frequentemente lo swap e quindi triplicando il tempo di esecuzione.
+- With 2MB of RAM, all data can be saved in memory; this is reflected in swap disk reads and writes being equal to 0.
+- Reducing RAM to 1MB, an increase in swap reads and writes is observed. The quicksort algorithm recursively divides the array into partitions. As soon as the size of the sub-partitions becomes smaller than the available physical RAM, sorting can occur without further page faults, reducing the number of I/O operations. This is a case where the spatial locality assumption holds.
+- Reducing memory to 512KB, the threshold at which partitions reside in RAM lowers, forcing the system to use swap more frequently and thus tripling execution time.
 
-#### Limiti della memoria kernel in parallelVM
-Il test parallelVM crea 24 processi figli paralleli, ciascuno dei quali esegue moltiplicazioni di matrici. Si osserva che:
+#### Kernel Memory Limits in parallelVM
+The parallelVM test creates 24 parallel child processes, each performing matrix multiplications. It is observed that:
 
-- Nella configurazione con 512KB di RAM, 11 sottoprocessi falliscono con errore out of memory. Questo è perchè ciascun processo richiede l'allocazione di una pagina per lo stack del kernel, essendo memoria kernel questa pagina non può essere rimpiazzata e scritta sul disco di swap. Per questo se la memoria fisica non è sufficiente, la coremap non riesce ad allocare altri frame e forza la fork a ritornare un errore.
-- Con 1MB e 2MB di RAM invece, lo spazio fisico è abbastanza per tutta la memoria kernel necessaria, lasciandoci verificare che la nostra memoria virtuale funziona anche in un ambiente concorrente. Per 1MB di RAM, è necessario appoggiarci maggiormente alla partizione di swap per salvare le matrici dei vari processi, mentre per 2MB quasi tutto è contenuto in RAM, portando a un numero trascurabile di accessi allo swap.
+- In the 512KB RAM configuration, 11 sub-processes fail with an out-of-memory error. This is because each process requires allocation of a page for the kernel stack; being kernel memory, this page cannot be replaced and written to the swap disk. Therefore, if physical memory is insufficient, the coremap cannot allocate further frames and forces fork to return an error.
+- With 1MB and 2MB of RAM instead, physical space is sufficient for all required kernel memory, allowing us to verify that our virtual memory works even in a concurrent environment. For 1MB of RAM, it is necessary to rely more heavily on the swap partition to save the matrices of the various processes, whereas for 2MB almost everything is contained in RAM, leading to a negligible number of swap accesses.
